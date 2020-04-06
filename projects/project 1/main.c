@@ -127,6 +127,8 @@ int file(char *file)
     execute(line); // execute that shit
   } while(getline(&line, &line_length, f) != -1); // iterate until we end
 
+  free(line);
+
   // close the files
   fclose(f); // close the input file
   fclose(o);
