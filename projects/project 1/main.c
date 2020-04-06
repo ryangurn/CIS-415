@@ -4,8 +4,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "command.h"
-#include "command.c"
 #include <sys/syscall.h>
 
 // these two imports are for the open function and the close function
@@ -14,10 +12,12 @@
 #include <fcntl.h> // for open
 #include <unistd.h> // for close
 
+// includes for commands
+
 // globals
 #define true (1==1)
 #define false (1==0)
-#define debug true
+#define debug false
 #define interactive_input stdin
 #define interactive_output stdout
 #define file_output "output.txt"
@@ -44,6 +44,17 @@ int execute(char *line)
 
     if (debug) { printf("<<< token(%s)\n", trim(tokenize_initial)); }
     // execute the commands
+    if (strcmp(trim(tokenize_initial), "ls") == 0){
+      listDir();
+    }
+    else if (strcmp(trim(tokenize_initial), "pwd") == 0)
+    {
+      showCurrentDir();
+    }
+    else
+    {
+      printf("Error! Unrecognized command\n");
+    }
 
     tokenize_initial = strtok(NULL, ";");
   }
