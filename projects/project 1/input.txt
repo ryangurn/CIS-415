@@ -2,5 +2,6 @@ pwd ; mkdir test ; cd test
 cd .. ; cd test ; pwd
 cp ../input.txt . ; ls ; cat input.txt
 mv input.txt del.txt ; pwd ; ls
-rm del.txt ; lscd .. ; pwd
+rm del.txt ; ls
+cd .. ; pwd
 ls
