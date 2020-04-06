@@ -17,11 +17,10 @@
 // globals
 #define true (1==1)
 #define false (1==0)
-#define debug false
+#define debug true
 #define interactive_input stdin
 #define interactive_output stdout
 #define file_output "output.txt"
-const char file_delimiter[2] = " ";
 
 // helper functions
 char *left_trim(char *s){ while(isspace(*s)) s++; return s; }
@@ -36,30 +35,68 @@ char *trim(char *s){ return right_trim(left_trim(s));  }
 //                   will also have payoff's for debugging/performance/etc.
 int execute(char *line)
 {
-  if (debug) { printf("<<< COMPILING TOKENS\n"); }
-  char *tokenize_initial = strtok(line, ";");
-
-  while(tokenize_initial != NULL)
-  {
-
-    if (debug) { printf("<<< token(%s)\n", trim(tokenize_initial)); }
-    // execute the commands
-    if (strcmp(trim(tokenize_initial), "ls") == 0){
-      listDir();
+  int i = 0;
+  int count = 0;
+  char *array[sizeof(line)];
+  char *final[sizeof(line)][sizeof(line)];
+  for (size_t a = 0; a < sizeof(line); a++) {
+    for (size_t b = 0; b < sizeof(line); b++) {
+      final[a][b] = "";
     }
-    else if (strcmp(trim(tokenize_initial), "pwd") == 0)
-    {
-      showCurrentDir();
-    }
-    else
-    {
-      printf("Error! Unrecognized command\n");
-    }
-
-    tokenize_initial = strtok(NULL, ";");
   }
 
-  if (debug) { printf("<<< FINISHING WITH TOKENS\n"); }
+  char *token = strtok(line, ";");
+  while (token != NULL)
+  {
+    array[i] = trim(token);
+    i++;
+    count++;
+    token = strtok(NULL, ";");
+  }
+
+  for (int i = 0; i < count; i++) {
+    if (strcmp(array[i], ""))
+    {
+      char *tok = strtok(array[i], " ");
+      int iterator = 0;
+      while (tok != NULL)
+      {
+        if (debug) { printf("<<< (%d)(%d) %s\n", i, iterator, tok); }
+
+        final[i][iterator] = tok; // update final and add token
+
+        tok = strtok(NULL, " ");
+        iterator++;
+      }
+    }
+  }
+
+  for (size_t a = 0; a < sizeof(line); a++) {
+    for (size_t b = 0; b < sizeof(line); b++) {
+      if (strcmp(final[a][b], "") != 0) // remove any empty records
+      {
+        if (b == 0) // ensure that we are dealing with the cmd
+        {
+          if (debug) { printf("<< %s\n", final[a][b]); }
+          if (strcmp(final[a][b], "ls") == 0)
+          {
+            if (strcmp(final[a][1], "") != 0) { printf("Error! Unsupported parameters for command: %s\n", final[a][0]); return 0; }
+            listDir();
+          }
+          else if (strcmp(final[a][b], "pwd") == 0)
+          {
+            if (strcmp(final[a][1], "") != 0) { printf("Error! Unsupported parameters for command: %s\n", final[a][0]); return 0; }
+            showCurrentDir();
+          }
+          else
+          {
+            printf("Error! Unrecognized command: %s\n", final[a][0]);
+          }
+
+        }
+      }
+    }
+  }
 
   return 0;
 }
