@@ -35,13 +35,27 @@ char *trim(char *s){ return right_trim(left_trim(s));  }
 //                   will also have payoff's for debugging/performance/etc.
 int execute(char *line)
 {
+  // declare some counters
   int i = 0;
   int count = 0;
+
+  // determine the number of tokens needed.
+  size_t token_array_length = 0;
+  char *ptr = line;
+  while((ptr = strchr(ptr, ' ')) != NULL) {
+      token_array_length++;
+      ptr++;
+  }
+
+  // declate the arrays that we will use to tokenize.
   char *array[sizeof(line)];
   char *final[sizeof(line)][sizeof(line)];
-  for (size_t a = 0; a < sizeof(line); a++) {
-    for (size_t b = 0; b < sizeof(line); b++) {
-      final[a][b] = "";
+  // define the final 2d array that information gets placed within.
+  if(debug){
+    for (size_t a = 0; a <= token_array_length; a++) {
+      for (size_t b = 0; b <= token_array_length; b++) {
+        final[a][b] = "";
+      }
     }
   }
 
@@ -54,16 +68,16 @@ int execute(char *line)
     token = strtok(NULL, ";");
   }
 
-  for (int i = 0; i < count; i++) {
-    if (strcmp(array[i], ""))
+  for (int k = 0; k < count; k++) {
+    if (strcmp(array[k], ""))
     {
-      char *tok = strtok(array[i], " ");
+      char *tok = strtok(array[k], " ");
       int iterator = 0;
       while (tok != NULL)
       {
-        if (debug) { printf("<<< (%d)(%d) %s\n", i, iterator, tok); }
+        if (debug) { printf("<<< (%d)(%d) %s\n", k, iterator, tok); }
 
-        final[i][iterator] = tok; // update final and add token
+        final[k][iterator] = tok; // update final and add token
 
         tok = strtok(NULL, " ");
         iterator++;
@@ -71,21 +85,31 @@ int execute(char *line)
     }
   }
 
-  for (size_t a = 0; a < sizeof(line); a++) {
-    for (size_t b = 0; b < sizeof(line); b++) {
+  // print out the contents of final
+  for (size_t a = 0; a <= token_array_length; a++) {
+    for (size_t b = 0; b <= token_array_length; b++) {
+      printf("[%ld][%ld] - %s ", a, b, final[a][b]);
+    }
+    printf("\n");
+  }
+
+  for (size_t a = 0; a <= token_array_length; a++) {
+    for (size_t b = 0; b <= token_array_length; b++) {
       if (strcmp(final[a][b], "") != 0) // remove any empty records
       {
         if (b == 0) // ensure that we are dealing with the cmd
         {
-          if (debug) { printf("<< %s\n", final[a][b]); }
+          if (debug) {
+            printf("<< %s\n", final[a][b]);
+          } // debug
           if (strcmp(final[a][b], "ls") == 0)
           {
-            if (strcmp(final[a][1], "") != 0) { printf("Error! Unsupported parameters for command: %s\n", final[a][0]); return 0; }
+            // if (strcmp(final[a][1], "") != 0) { printf("Error! Unsupported parameters for command: %s\n", final[a][0]); return 0; }
             listDir();
           }
           else if (strcmp(final[a][b], "pwd") == 0)
           {
-            if (strcmp(final[a][1], "") != 0) { printf("Error! Unsupported parameters for command: %s\n", final[a][0]); return 0; }
+            // if (strcmp(final[a][1], "") != 0) { printf("Error! Unsupported parameters for command: %s\n", final[a][0]); return 0; }
             showCurrentDir();
           }
           else
