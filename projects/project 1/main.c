@@ -86,6 +86,7 @@ int interative()
     // execute commands
     execute(input); // execute that shit
   }
+  free(input);
   return 0;
 }
 
