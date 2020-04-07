@@ -13,6 +13,7 @@
 #include <unistd.h> // for close
 
 // includes for commands
+#include "command.h"
 
 // globals
 #define true (1==1)
@@ -121,7 +122,7 @@ int execute(char *line)
               if(debug) { printf("<<< %s\n", final[a][1]); }
               makeDir(final[a][1]);
             } else {
-              printf("Error! Missing parameters for command: %s\n", final[a][0]); return 0;
+              printf("Error! Missing parameter for command: %s\n", final[a][0]); return 0;
             }
           }
           else if (strcmp(final[a][b], "cd") == 0)
@@ -130,6 +131,46 @@ int execute(char *line)
             {
               if(debug) { printf("<<< %s\n", final[a][1]); }
               changeDir(final[a][1]);
+            } else {
+              printf("Error! Missing parameter for command: %s\n", final[a][0]); return 0;
+            }
+          }
+          else if (strcmp(final[a][b], "cp") == 0)
+          {
+              if (strcmp(final[a][1], "") != 0 && strcmp(final[a][2], "") != 0)
+              {
+                if (debug) { printf("<<< %s - %s\n", final[a][1], final[a][2]); }
+                copyFile(final[a][1], final[a][2]);
+              } else {
+                printf("Error! Missing parameters for command: %s\n", final[a][0]); return 0;
+              }
+          }
+          else if (strcmp(final[a][b], "mv") == 0)
+          {
+            if (strcmp(final[a][1], "") != 0 && strcmp(final[a][2], "") != 0)
+            {
+              if (debug) { printf("<<< %s - %s\n", final[a][1], final[a][2]); }
+              moveFile(final[a][1], final[a][2]);
+            } else {
+              printf("Error! Missing parameters for command: %s\n", final[a][0]); return 0;
+            }
+          }
+          else if (strcmp(final[a][b], "rm") == 0)
+          {
+            if (strcmp(final[a][1], "") != 0)
+            {
+              if (debug) { printf("<<< %s\n", final[a][1]); }
+              deleteFile(final[a][1]);
+            } else {
+              printf("Error! Missing parameters for command: %s\n", final[a][0]); return 0;
+            }
+          }
+          else if (strcmp(final[a][b], "cat") == 0)
+          {
+            if (strcmp(final[a][1], "") != 0)
+            {
+              if (debug) { printf("<<< %s\n", final[a][1]); }
+              displayFile(final[a][1]);
             } else {
               printf("Error! Missing parameters for command: %s\n", final[a][0]); return 0;
             }
