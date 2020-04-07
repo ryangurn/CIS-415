@@ -104,13 +104,35 @@ int execute(char *line)
           } // debug
           if (strcmp(final[a][b], "ls") == 0)
           {
+            // TODO: ADD EMPTY PARAM CHECK
             // if (strcmp(final[a][1], "") != 0) { printf("Error! Unsupported parameters for command: %s\n", final[a][0]); return 0; }
             listDir();
           }
           else if (strcmp(final[a][b], "pwd") == 0)
           {
+            // TODO: ADD EMPTY PARAM CHECK
             // if (strcmp(final[a][1], "") != 0) { printf("Error! Unsupported parameters for command: %s\n", final[a][0]); return 0; }
             showCurrentDir();
+          }
+          else if (strcmp(final[a][b], "mkdir") == 0)
+          {
+            if (strcmp(final[a][1], "") != 0)
+            {
+              if(debug) { printf("<<< %s\n", final[a][1]); }
+              makeDir(final[a][1]);
+            } else {
+              printf("Error! Missing parameters for command: %s\n", final[a][0]); return 0;
+            }
+          }
+          else if (strcmp(final[a][b], "cd") == 0)
+          {
+            if (strcmp(final[a][1], "") != 0)
+            {
+              if(debug) { printf("<<< %s\n", final[a][1]); }
+              changeDir(final[a][1]);
+            } else {
+              printf("Error! Missing parameters for command: %s\n", final[a][0]); return 0;
+            }
           }
           else
           {
