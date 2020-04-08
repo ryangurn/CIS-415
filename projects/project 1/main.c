@@ -23,6 +23,8 @@
 #define interactive_output stdout
 #define file_output "output.txt"
 
+FILE *output = stdout;
+
 // helper functions
 char *left_trim(char *s){ while(isspace(*s)) s++; return s; }
 char *right_trim(char *s){ char *back = s + strlen(s); while(isspace(*--back)); *(back+1) = '\0'; return s; }
