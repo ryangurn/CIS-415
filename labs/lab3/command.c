@@ -17,6 +17,7 @@
 
 void lfcat()
 {
+  char buf[PATH_MAX];
   char current_working_directory[PATH_MAX];
   getcwd(current_working_directory, sizeof(current_working_directory));
 
@@ -58,7 +59,6 @@ void lfcat()
         return;
       }
 
-      char buf[PATH_MAX];
       int char_count = read(file_path, buf, PATH_MAX);
       do {
         write(1, buf, char_count);
