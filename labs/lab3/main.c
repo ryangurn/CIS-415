@@ -84,6 +84,10 @@ void execute(char *line)
 				{
 					if (strcmp(final[a][b], "lfcat") == 0)
 					{
+						if (strcmp(final[a][1], "") != 0) {
+							printf("Error! extra parameters\n");
+							return;
+						}
 						lfcat();
 					}
 					else
