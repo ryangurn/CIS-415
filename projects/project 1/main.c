@@ -18,12 +18,10 @@
 // globals
 #define true (1==1)
 #define false (1==0)
-#define debug true
+#define debug false
 #define interactive_input stdin
 #define interactive_output stdout
 #define file_output "output.txt"
-
-FILE *output = stdout;
 
 // helper functions
 char *left_trim(char *s){ while(isspace(*s)) s++; return s; }
@@ -45,7 +43,7 @@ int execute(char *line)
   // determine the number of tokens needed.
   size_t token_array_length = 0;
   char *ptr = line;
-  while((ptr = strchr(ptr, ' ')) != NULL) {
+  while((ptr = strchr(ptr, ';')) != NULL) {
       token_array_length++;
       ptr++;
   }
@@ -54,11 +52,9 @@ int execute(char *line)
   char *array[sizeof(line)];
   char *final[sizeof(line)][sizeof(line)];
   // define the final 2d array that information gets placed within.
-  if(debug){
-    for (size_t a = 0; a <= token_array_length; a++) {
-      for (size_t b = 0; b <= token_array_length; b++) {
-        final[a][b] = "";
-      }
+  for (size_t a = 0; a <= token_array_length; a++) {
+    for (size_t b = 0; b <= token_array_length; b++) {
+      final[a][b] = "";
     }
   }
 
@@ -89,14 +85,22 @@ int execute(char *line)
   }
 
   // print out the contents of final
-  for (size_t a = 0; a <= token_array_length; a++) {
-    for (size_t b = 0; b <= token_array_length; b++) {
-      printf("[%ld][%ld] - %s ", a, b, final[a][b]);
+  if (debug)
+  {
+    for (size_t a = 0; a <= token_array_length; a++) {
+      for (size_t b = 0; b <= token_array_length; b++) {
+        printf("[%ld][%ld] - %s ", a, b, final[a][b]);
+      }
+      printf("\n");
     }
-    printf("\n");
   }
 
   for (size_t a = 0; a <= token_array_length; a++) {
+    if (strcmp(final[a][0], "") == 0)
+    {
+      printf("Error! Unrecognized command: %s\n", final[a][0]);
+    }
+
     for (size_t b = 0; b <= token_array_length; b++) {
       if (strcmp(final[a][b], "") != 0) // remove any empty records
       {
@@ -107,14 +111,12 @@ int execute(char *line)
           } // debug
           if (strcmp(final[a][b], "ls") == 0)
           {
-            // TODO: ADD EMPTY PARAM CHECK
-            // if (strcmp(final[a][1], "") != 0) { printf("Error! Unsupported parameters for command: %s\n", final[a][0]); return 0; }
+            if (strcmp(final[a][0], "") == 0 && strcmp(final[a][1], "") != 0) { printf("Error! Unsupported parameters for command: %s\n", final[a][0]); return 0; }
             listDir();
           }
           else if (strcmp(final[a][b], "pwd") == 0)
           {
-            // TODO: ADD EMPTY PARAM CHECK
-            // if (strcmp(final[a][1], "") != 0) { printf("Error! Unsupported parameters for command: %s\n", final[a][0]); return 0; }
+            if (strcmp(final[a][0], "") == 0 && strcmp(final[a][1], "") != 0) { printf("Error! Unsupported parameters for command: %s\n", final[a][0]); return 0; }
             showCurrentDir();
           }
           else if (strcmp(final[a][b], "mkdir") == 0)
@@ -235,7 +237,7 @@ int file(char *file)
 {
   // open the output file
   // reference: http://www.decompile.com/cpp/faq/fopen_write_append.htm
-  FILE *o = fopen(file_output, "a+"); // append new information or create file if it does not exists
+  FILE *o = freopen(file_output, "a+", stdout); // append new information or create file if it does not exists
 
   // attempt to open the file based on str
   int exists = open(file, O_RDONLY);
