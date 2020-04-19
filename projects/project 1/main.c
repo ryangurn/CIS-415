@@ -195,7 +195,7 @@ int execute(char *line)
 // interactive()
 // Purpose: this function will run the interactive mode for the application
 // Design Rationale: ensure that all functionality for interactive mode is tightly coupled
-int interative()
+int interactive()
 {
   // main vars
   // input is meant to be the var that all inputs are put into
@@ -289,7 +289,7 @@ int main(int argc, char *argv[])
     if (debug) { printf("<<< INTERACTIVE\n"); } // debug
     // no flags thrown
     // while loop the data
-    interative();
+    interactive();
     return 1;
   }
   else if (argc >= 1)
