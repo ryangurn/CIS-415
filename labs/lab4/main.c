@@ -8,6 +8,7 @@
 
 int main(int argc, char const *argv[])
 {
+  // when changing this to have multiple processes we want an arr of pid_t
   pid_t pid;
 
   printf("Main start: PID(%d)\n", getpid());
@@ -19,6 +20,7 @@ int main(int argc, char const *argv[])
     printf("Child Process: PID(%d) | Parent Process: PID(%d)\n", getpid(), getppid());
     printf("Status: %d\n", pid);
 
+    // execute another binary using the following
     // if (execv("./helloWorld") < 0)
     // {
     //   perror("execv")
@@ -28,6 +30,7 @@ int main(int argc, char const *argv[])
   }
   else
   {
+    // ensure that only the parent forks and that happens in this case
     wait(0);
     printf("Main exiting: PID(%d)\n", getpid());
   }
