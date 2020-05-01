@@ -39,6 +39,8 @@ void handler(int signal)
   {
     printf("Child Process: %i - Received signal: SIGUSR1 - Calling exec().\n", getpid());
     // sigwait()
+    char *params[1] = {"iobound"};
+    execvp("iobound", params);
     waitRet = sigwait(&set, sigPtr);
     if(waitRet > 0)
     {
