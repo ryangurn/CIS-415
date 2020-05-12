@@ -18,7 +18,7 @@ int main(int argc, char const *argv[])
   setbuf(stdout, NULL);
 
   char *line = NULL;
-  size_t number;
+  ssize_t number;
   size_t length = 0;
   char *token;
   char *arguements[10];
@@ -45,13 +45,12 @@ int main(int argc, char const *argv[])
   while ((number = getline(&line, &length, in)) != -1) {
     pc++; // add to the program counter
   }
-
   fclose(in); // close the input just for a moment
 
   in = fopen(argv[1], "r");
   int j = 0;
   pid_t pid[pc]; // setup the correct numbers of pid's
-  pid_t wait;
+  pid_t waitPID;
   int waitStatus;
 
   while ((number = getline(&line, &length, in)) != -1) {
@@ -75,15 +74,10 @@ int main(int argc, char const *argv[])
 
     pid[j] = fork(); // fork
 
-    if (pid[j] < 0) { // check for fork errors
-      exit(-1); // exit if needed
-    }
-
     // execute child
     if (pid[j] == 0) {
       execvp(arguements[0], arguements);
       printf("Error!: Invalid Executable\n");
-      exit(-1);
     }
 
     j++; // iterate pid iterator
@@ -92,7 +86,7 @@ int main(int argc, char const *argv[])
   // wait
   int waitIterator = 0;
   for (waitIterator; waitIterator < pc; waitIterator++) {
-    wait = waitpid(pid[waitIterator], &waitStatus, WUNTRACED | WCONTINUED);
+    waitPID = waitpid(pid[waitIterator], &waitStatus, WUNTRACED | WCONTINUED);
   }
 
   // free all the things
