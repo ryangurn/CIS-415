@@ -120,6 +120,10 @@ int main(int argc, char const *argv[])
 
       execvp(arguements[0], arguements);
       printf("\nError!: Invalid executable\n\n");
+			free(line);
+			free(token);
+			fclose(in);
+			exit(-1);
     }
 
     j++; // iterate pid iterator

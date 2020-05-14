@@ -17,7 +17,7 @@ int Idx;
 int ProgramCount;
 pid_t pid[5];
 
-void handler(int signal, siginfo_t *info, void *context) {
+void handler(int signal) {
 	printf("Handler Process: %i - Received Signal: %d\n", getpid(), signal);
 	pid_t waitPID;
 	int waitStatus;
@@ -101,8 +101,7 @@ int main(int argc, char const *argv[])
   // sigaction one declaration
   struct sigaction sig = {};
   memset(&sig, '\0', sizeof(&sig));
-  sig.sa_sigaction = &handler;
-  sig.sa_flags = SA_SIGINFO;
+  sig.sa_handler = handler;
   sigaction(SIGALRM, &sig, NULL);
 
 	// sigaction one declaration
@@ -137,8 +136,6 @@ int main(int argc, char const *argv[])
   in = fopen(argv[1], "r");
   int j = 0;
   pid[pc];
-  // pid_t wait;
-  int waitStatus;
 
   while ((number = getline(&line, &length, in)) != -1) {
     // setup signal
@@ -186,13 +183,17 @@ int main(int argc, char const *argv[])
 
       execvp(arguements[0], arguements);
       printf("\nError!: Invalid executable\n\n");
+			free(line);
+			free(token);
+			fclose(in);
+			exit(-1);
     }
 
     j++; // iterate pid iterator
   }
-  sleep(1);
+  sleep(3);
   signaler(pid, SIGUSR1, 0);
-  sleep(1);
+  sleep(3);
   signaler(pid, SIGSTOP, 1);
 	time_t now, elapsed;
 	int k;
@@ -200,20 +201,20 @@ int main(int argc, char const *argv[])
 		int exited;
 
 		now = time(NULL);
-		elapsed = time(NULL) + 1;
-		alarm(1);
+		elapsed = time(NULL) + 3;
+		alarm(3);
 
 		while (true) {
 			now = time(NULL);
 			if (now > elapsed) {
-				elapsed = time(NULL) + 1;
+				elapsed = time(NULL) + 3;
 				break;
 			}
 		}
 
 		exited = all_exited(pid);
 
-		if (exited) {
+		if (exited == 0) {
 			break;
 		}
 	}

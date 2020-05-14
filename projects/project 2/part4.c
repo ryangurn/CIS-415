@@ -83,7 +83,7 @@ void print_status(pid_t pid) {
 	int line_iterator = 0;
 	char* line = NULL;
 	size_t length = 0;
-	while (line_iterator < 12) {
+	while (line_iterator < 10) {
 		getline(&line, &length, in);
 		if (strcmp(line, "\n") == 0) {
 			continue;
@@ -230,6 +230,10 @@ int main(int argc, char const *argv[])
 
       execvp(arguements[0], arguements);
       printf("\nError!: Invalid executable\n\n");
+			free(line);
+			free(token);
+			fclose(in);
+			exit(-1);
     }
 
     j++; // iterate pid iterator

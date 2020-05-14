@@ -78,6 +78,10 @@ int main(int argc, char const *argv[])
     if (pid[j] == 0) {
       execvp(arguements[0], arguements);
       printf("Error!: Invalid Executable\n");
+      free(line);
+      free(token);
+      fclose(in);
+      exit(-1);
     }
 
     j++; // iterate pid iterator
