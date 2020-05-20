@@ -1,0 +1,34 @@
+==105537== Memcheck, a memory error detector
+==105537== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.
+==105537== Using Valgrind-3.13.0 and LibVEX; rerun with -h for copyright info
+==105537== Command: ./a.out
+==105537==
+Queue: Breakfast - Ticket Number: 1 - Dish: Breakfast Burrito
+Queue: Lunch - Ticket Number: 1 - Dish: Sandwich
+Queue: Dinner - Ticket Number: 1 - Dish: Pasta
+Queue: Bar - Ticket Number: 1 - Dish: Rum
+Queue: Breakfast - Ticket Number: 2 - Dish: Poached Eggs
+Queue: Lunch - Ticket Number: 2 - Dish: Burger
+Queue: Dinner - Ticket Number: 2 - Dish: Pot Stickers
+Queue: Bar - Ticket Number: 2 - Dish: Wine
+Queue: Breakfast - Ticket Number: 3 - Dish: Bagel
+Queue: Lunch - Ticket Number: 3 - Dish: Pizza
+Queue: Dinner - Ticket Number: 3 - Dish: Ramen
+Queue: Bar - Ticket Number: 3 - Dish: Wiskey
+Queue: Breakfast - Ticket Number: 0 - Dish: (null)
+Queue: Lunch - Ticket Number: 0 - Dish: (null)
+Queue: Dinner - Ticket Number: 0 - Dish: (null)
+Queue: Bar - Ticket Number: 0 - Dish: (null)
+Test Case: A - Result: Success
+Test Case: B - Result: Success
+Test Case: C - Result: Success
+Test Case: D - Result: Success
+==105537== 
+==105537== HEAP SUMMARY:
+==105537==     in use at exit: 0 bytes in 0 blocks
+==105537==   total heap usage: 5 allocs, 5 frees, 4,352 bytes allocated
+==105537==
+==105537== All heap blocks were freed -- no leaks are possible
+==105537==
+==105537== For counts of detected and suppressed errors, rerun with: -v
+==105537== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
