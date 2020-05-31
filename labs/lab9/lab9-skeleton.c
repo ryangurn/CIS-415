@@ -29,6 +29,7 @@
 //============================ Structs and Macros =============================
 //TODO: Add a mutex init
 //TODO: Declare a mutex for each queue (HINT: I placed my mutexes in the MTQ/TEQ)
+int TICKET = 0;
 
 typedef struct mealTicket{
 	int ticketNum;
@@ -42,9 +43,34 @@ typedef struct MTQ {
 	int length;
 	int ticket;
 	mealTicket *buffer;
+	pthread_mutex_t mutex;
 } MTQ;
 
 MTQ registry[MAXQUEUES];
+mealTicket buffer[MAXQUEUES][MAXTICKETS+1];
+
+struct enqueueArgs
+{
+	char *name;
+	mealTicket *TE;
+	int thread;
+};
+
+struct dequeueArgs
+{
+	char *name;
+	mealTicket MT;
+	int ticketNum;
+	int thread;
+};
+
+struct enqueueArgs eArgs[MAXPUBS];
+struct dequeueArgs dArgs[MAXSUBS];
+
+pthread_t pubs[MAXPUBS];
+pthread_t subs[MAXSUBS];
+
+mealTicket nullTicket = {-1};
 
 void init(int pos, char *MTQ_ID, int len) {
 	strcpy(registry[pos].name, MTQ_ID);
@@ -54,8 +80,10 @@ void init(int pos, char *MTQ_ID, int len) {
 	registry[pos].length = len;
 	registry[pos].ticket = 0;
 
+	pthread_mutex_init(&registry[pos].mutex, NULL);
+	registry[pos].ticket = 0;
 	//add null ticket or use head-1 to split empty/full case. Up to you.
-	registry[pos].buffer[len].ticketNum = -1;
+	registry[pos].buffer[registry[pos].length] = nullTicket;
 }
 
 void freeMTQ(int pos, char *MTQ_ID) {
@@ -75,15 +103,22 @@ int enqueue(char *MTQ_ID, mealTicket *MT) {
 
 	//STEP-2: Enqueue the ticket
 	if(flag) {
+		pthread_mutex_lock(&registry[i].mutex);
+
 		int tail = registry[i].tail;
 		if(registry[i].buffer[tail].ticketNum != -1) {
-			registry[i].buffer[tail].ticketNum = registry[i].ticket;
-			registry[i].buffer[tail].dish =  MT->dish;
-			registry[i].ticket++;
+			// registry[i].buffer[tail].ticketNum = registry[i].ticket;
+			// registry[i].buffer[tail].dish =  MT->dish;
+			// registry[i].ticket++;
+			MT->ticketNum = TICKET;
+			TICKET++;
+			registry[i].buffer[tail] = *MT;
 			if(tail == registry[i].length) { registry[i].tail = 0; }
 			else { registry[i].tail++; }
 			ret = 1;
 		}
+
+		pthread_mutex_unlock(&registry[i].mutex);
 	}
 	return ret;
 }
@@ -99,10 +134,12 @@ int dequeue(char *MTQ_ID, int ticketNum, mealTicket *MT) {
 
 	//Step-2: Dequeue the ticket
 	if(flag) {
+		pthread_mutex_lock(&registry[i].mutex);
+
 		int head = registry[i].head;
 		int tail = registry[i].tail;
 
-		if(head != tail) {
+		if(head != tail && ticketNum == registry[i].buffer[head].ticketNum) {
 			//copy the ticket
 			MT->ticketNum = registry[i].buffer[head].ticketNum;
 			MT->dish = registry[i].buffer[head].dish;
@@ -111,7 +148,7 @@ int dequeue(char *MTQ_ID, int ticketNum, mealTicket *MT) {
 			if(head == 0) {
 				registry[i].buffer[registry[i].length].ticketNum = 0;
 			} else {
-			registry[i].buffer[head-1].ticketNum = 0;
+				registry[i].buffer[head-1].ticketNum = 0;
 			}
 
 			//change the current ticket to null
@@ -122,6 +159,8 @@ int dequeue(char *MTQ_ID, int ticketNum, mealTicket *MT) {
 			else { registry[i].head++; }
 			ret = 1;
 		}
+
+		pthread_mutex_unlock(&registry[i].mutex);
 	}
 	return ret;
 }
@@ -137,6 +176,18 @@ void *publisher(void *args) {
 	* its appropriate queue before sleeping for 1 second.
 	* It will do this until there are no more meal tickets to push.
 	*/
+	char *name;
+	int j, thread;
+	name = ((struct enqueueArgs *) args)->name;
+	thread = ((struct enqueueArgs *) args)->thread;
+
+	printf("Pub - Queue %s (ThreadID: %d)\n", name, thread);
+	for (j = 0; j < 3; j++)
+	{
+		mealTicket MT;
+		MT = ((struct enqueueArgs *) args)->TE[j];
+		enqueue(name, &MT);
+	}
 }
 
 void *subscriber(void *args) {
@@ -151,6 +202,19 @@ void *subscriber(void *args) {
 	* thread ID and wait for 1 second. If the thread is not empty then it will pop a ticket and
 	* print it along with the thread id.
 	*/
+	char *name;
+	int thread, ticket;
+	mealTicket MT;
+
+	MT = ((struct dequeueArgs *) args)->MT;
+	name = ((struct dequeueArgs *) args)->name;
+	thread = ((struct dequeueArgs *) args)->thread;
+	ticket = ((struct dequeueArgs *) args)->ticketNum;
+
+	printf("Sub - Queue %s (ThreadID: %d)\n", name, thread);
+
+	dequeue(name, ticket, &MT);
+	printf("Ticket: %d -> Dish(%s)\n", MT.ticketNum, MT.dish);
 }
 //=============================================================================
 
@@ -178,12 +242,55 @@ int main(int argc, char argv[]) {
 
 	//STEP-2: Create the publisher thread-pool
 
+	eArgs[0].name = qNames[0];
+	eArgs[0].TE = bfast;
+	eArgs[0].thread = 010;
+
+	pthread_create(&pubs[0], NULL, publisher, (void *)&eArgs[0]);
+
+	eArgs[1].name = qNames[1];
+	eArgs[1].TE = lnch;
+	eArgs[1].thread = 110;
+
+	pthread_create(&pubs[1], NULL, publisher, (void *)&eArgs[1]);
+
+	eArgs[2].name = qNames[2];
+	eArgs[2].TE = dnr;
+	eArgs[2].thread = 111;
+
+	pthread_create(&pubs[2], NULL, publisher, (void *)&eArgs[2]);
+
+	eArgs[3].name = qNames[3];
+	eArgs[3].TE = br;
+	eArgs[3].thread = 000;
+
+	pthread_create(&pubs[3], NULL, publisher, (void *)&eArgs[3]);
+	sleep(1);
+
 	//STEP-3: Create the subscriber thread-pool
 
+	for (i = 0; i < 4; i++)
+	{
+		mealTicket MT;
+		dArgs[i].name = qNames[i];
+		dArgs[i].ticketNum = registry[i].buffer[registry[i].head].ticketNum;
+		dArgs[i].MT = MT;
+		dArgs[i].thread = i+20;
+
+		pthread_create(&subs[i], NULL, subscriber, (void *)&dArgs[i]);
+	}
+
 	//STEP-4: Join the thread-pools
+	for (i=0; i <MAXPUBS; i++)
+	{
+		pthread_join(pubs[i], NULL);
+		pthread_join(subs[i], NULL);
+	}
 
 	//STEP-5: Free the registry
-
+	for (size_t i = 0; i < 4; i++) {
+		freeMTQ(i, ""); // the string does not appear to be used for this
+	}
 	return EXIT_SUCCESS;
 }
 //=============================================================================
