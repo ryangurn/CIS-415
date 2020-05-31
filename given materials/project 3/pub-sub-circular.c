@@ -51,7 +51,7 @@ void initialize() {
 int i, j, k;
 
   // create the buffers
-  for (i=0; i++; i<NUMBUFFERS) {
+ for (i=0; i<NUMBUFFERS; i++) {
     buffers[i].count = 0;	// # entries in buffer now
     buffers[i].head = 0;	// head index
     buffers[i].tail = 0;	// tail index
@@ -60,7 +60,7 @@ int i, j, k;
   }
 
   // create the buffer semaphores
-  for (i=0; i++; i<NUMBUFFERS) {
+  for (i=0; i<NUMBUFFERS; i++) {
     pthread_mutex_init(&(mutex[i]), NULL);
     //    sem_init(&full[i], 0, 0);
     //    sem_init(&empty[i], 0, BUFFERSIZE);
