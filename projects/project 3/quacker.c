@@ -48,7 +48,7 @@ typedef struct {
 	// we might need some char or something here
 } threadArguements;
 
-topicEntryQueue Queues[MAXENTRIES];
+topicEntryQueue Queues[MAXBUFFERS];
 topicEntry arr[MAXTOPICS][MAXENTRIES+1];
 
 pthread_mutex_t publisher_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -57,10 +57,6 @@ pthread_cond_t condition;
 pthread_t publishers[MAXPUBLISHERS];
 pthread_t subscribers[MAXSUBSCRIBERS];
 pthread_attr_t attributes;
-
-pthread_mutex_t mutex[MAXBUFFERS];
-sem_t full[MAXBUFFERS];
-sem_t empty[MAXBUFFERS];
 
 threadArguements publisherArgs[MAXPUBLISHERS];
 threadArguements subscriberArgs[MAXSUBSCRIBERS];
@@ -75,7 +71,7 @@ int enqueue(int topicEntryQueueID, topicEntry TE)
 {
 	int i;																						// iterator
 	int found = -1;																		// have we found the queue
-	topicEntryQueue tmp;															// tmp location to store queue
+	topicEntryQueue tmp;														// tmp location to store queue
 	for (i = 0; i < MAXTOPICS; i++)
 	{
 		if(Queues[i].id == topicEntryQueueID)
