@@ -7,6 +7,7 @@
 
 #define RANDOMDIVISOR	100000000
 #define TRUE 1
+#define FALSE 0
 #define	ENTRYLENGTH	80	// entry length
 #define	NUMENTRIES	100	// entry length
 #define	BUFFERSIZE	100	// buffer size
@@ -51,7 +52,7 @@ void initialize() {
 int i, j, k;
 
   // create the buffers
- for (i=0; i<NUMBUFFERS; i++) {
+  for (i=0; i++; i<NUMBUFFERS) {
     buffers[i].count = 0;	// # entries in buffer now
     buffers[i].head = 0;	// head index
     buffers[i].tail = 0;	// tail index
@@ -60,7 +61,7 @@ int i, j, k;
   }
 
   // create the buffer semaphores
-  for (i=0; i<NUMBUFFERS; i++) {
+  for (i=0; i++; i<NUMBUFFERS) {
     pthread_mutex_init(&(mutex[i]), NULL);
     //    sem_init(&full[i], 0, 0);
     //    sem_init(&empty[i], 0, BUFFERSIZE);
@@ -71,7 +72,7 @@ int i, j, k;
 } // initialize()
 
 int enqueue(int buffid) {
-  
+
   if (buffers[buffid].count == BUFFERSIZE) {
     return(-1);		// buffer is full
   }
@@ -83,7 +84,7 @@ int enqueue(int buffid) {
 } // enqueue()
 
 int dequeue(int buffid) {
-  
+
   if (buffers[buffid].count == 0) {
     return(-1);		// buffer is empty
   }
@@ -96,7 +97,7 @@ int dequeue(int buffid) {
 void *publisher(void *args) {
   int	bid, tid;	// buffer id and thread id
   int	randomnum;	// random number
-  
+
   tid = ((struct threadargs *) args)->id;
   fprintf(stdout, "publisher thread id = %d, %ld\n", tid, pthread_self());
   while(TRUE) {
@@ -119,7 +120,7 @@ void *publisher(void *args) {
 void *subscriber(void *args) {
   int	bid, tid;	// buffer id and thread id
   int	randomnum;	// random number
-  
+
   tid = ((struct threadargs *) args)->id;
   fprintf(stdout, "subscriber thread id = %d, %ld\n", tid, pthread_self());
   while(TRUE) {
