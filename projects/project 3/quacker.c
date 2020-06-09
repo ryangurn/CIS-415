@@ -14,12 +14,12 @@
 #define TRUE 1
 #define FALSE 0
 #define DEBUG FALSE
-#define MAXENTRIES 5
+#define MAXENTRIES 10
 #define URLSIZE 256
 #define CAPSIZE 256
 #define NUMPROXIES 10
 #define MAXNAME 256
-#define MAXTOPICS 5
+#define MAXTOPICS 10
 
 char *left_trim (char *s)
 {
@@ -272,55 +272,54 @@ int entry (int id, int last, topicEntry *topic)
 
 				//stop
 				return 0;
+			}
 
-				int j = Queue[i].head;
-				// loop until we are done
-				while ( j != - 1 )
+			int j = Queue[i].head;
+			// loop until we are done
+			while ( j != - 1 )
+			{
+
+				if ( Queue[i].buffer[j].entryNum >= last + 1 )
 				{
-
-					if ( Queue[i].buffer[j].entryNum >= last + 1 )
+					*topic = Queue[i].buffer[j];
+					if ( Queue[i].buffer[j].entryNum > last + 1 )
 					{
-						*topic = Queue[i].buffer[j];
-						if ( Queue[i].buffer[j].entryNum > last + 1 )
-						{
-							pthread_mutex_unlock (&Queue[i].primaryMutex);
-							pthread_mutex_unlock (&Queue[i].secondaryMutex);
-							return Queue[i].buffer[j].entryNum;
-						} // if()
-
 						pthread_mutex_unlock (&Queue[i].primaryMutex);
 						pthread_mutex_unlock (&Queue[i].secondaryMutex);
-						return 1;
+						return Queue[i].buffer[j].entryNum;
 					} // if()
 
-					if ( j == Queue[i].length - 1 )
-					{
-						if ( Queue[i].head == 0 )
-						{
-							pthread_mutex_unlock (&Queue[i].primaryMutex);
-							pthread_mutex_unlock (&Queue[i].secondaryMutex);
-							return 0;
-						} // if()
-						j = 0;
-					} // if()
+					pthread_mutex_unlock (&Queue[i].primaryMutex);
+					pthread_mutex_unlock (&Queue[i].secondaryMutex);
+					return 1;
+				} // if()
 
-					if ( j == Queue[i].head - 1 )
+				if ( j == Queue[i].length - 1 )
+				{
+					if ( Queue[i].head == 0 )
 					{
-
 						pthread_mutex_unlock (&Queue[i].primaryMutex);
 						pthread_mutex_unlock (&Queue[i].secondaryMutex);
 						return 0;
-
 					} // if()
-					j = j + 1;
+					j = 0;
+				} // if()
 
-				} // while()
+				if ( j == Queue[i].head - 1 )
+				{
 
-				pthread_mutex_unlock (&Queue[i].primaryMutex);
-				pthread_mutex_unlock (&Queue[i].secondaryMutex);
-				return 0;
+					pthread_mutex_unlock (&Queue[i].primaryMutex);
+					pthread_mutex_unlock (&Queue[i].secondaryMutex);
+					return 0;
 
-			} // if()
+				} // if()
+				j = j + 1;
+
+			} // while()
+
+			pthread_mutex_unlock (&Queue[i].primaryMutex);
+			pthread_mutex_unlock (&Queue[i].secondaryMutex);
+			return 0;
 
 		} // if()
 	} // for()
@@ -523,9 +522,9 @@ void *Subscriber (void *args)
 			} // if()
 			else
 			{
-				fprintf (subFile, "<!DOCTYPE html>");
-				fprintf (subFile, "<html>");
-				fprintf (subFile, "<head>");
+				fprintf (subFile, "<!DOCTYPE html>\n");
+				fprintf (subFile, "<html>\n");
+				fprintf (subFile, "<head>\n");
 				fprintf (subFile, "<title>%s</title>\n\n", token);
 				fprintf (subFile, "<style>\n");
 				fprintf (subFile, "table, th, td {\n");
@@ -602,11 +601,13 @@ void *Subscriber (void *args)
 					int id = atoi (strArr[1]);
 
 					entryReturn = entry (id, lastEntry[id], entPtr);
+					printf("entry(%d)\n", entryReturn);
+					fflush(stdout);
 
 					if ( entryReturn == 1 )
 					{
 						lastEntry[id] = lastEntry[id] + 1;
-						printf ("URL(%s) | Caption(%s) | ID(%ld)", ent.photoURL, ent.photoCaption, ent.pubID);
+						printf ("URL(%s) | Caption(%s) | ID(%ld)\n", ent.photoURL, ent.photoCaption, ent.pubID);
 						fflush(stdout);
 
 						int rPos = 0;
@@ -620,8 +621,8 @@ void *Subscriber (void *args)
 
 						fprintf (subFile, "\n<h2>Topic Name: %s</h2>\n", Queue[rPos].name);
 						fprintf (subFile,
-						         "<table style='width:100%%\' \align='middle'>\n\t<tr>\n\t\t<th>CAPTION</th>\n\t\t<th>PHOTO-URL</th>\n\t</tr>\n");
-						fprintf (subFile, "\t<tr>");
+						         "<table style='width:100%%\' align='middle'>\n\t<tr>\n\t\t<th>CAPTION</th>\n\t\t<th>PHOTO-URL</th>\n\t</tr>\n");
+						fprintf (subFile, "\t<tr>\n");
 						fprintf (subFile, "\t\t<td>%s</td>\n", ent.photoCaption);
 						fprintf (subFile, "\t\t<td>%s</td>\n", ent.photoURL);
 						fprintf (subFile, "\t</tr>\n");
@@ -648,8 +649,8 @@ void *Subscriber (void *args)
 
 						fprintf (subFile, "\n<h2>Topic Name: %s</h2>\n", Queue[rPos].name);
 						fprintf (subFile,
-						         "<table style='width:100%%\' \align='middle'>\n\t<tr>\n\t\t<th>CAPTION</th>\n\t\t<th>PHOTO-URL</th>\n\t</tr>\n");
-						fprintf (subFile, "\t<tr>");
+						         "<table style='width:100%%\' align='middle'>\n\t<tr>\n\t\t<th>CAPTION</th>\n\t\t<th>PHOTO-URL</th>\n\t</tr>\n");
+						fprintf (subFile, "\t<tr>\n");
 						fprintf (subFile, "\t\t<td>%s</td>\n", ent.photoCaption);
 						fprintf (subFile, "\t\t<td>%s</td>\n", ent.photoURL);
 						fprintf (subFile, "\t</tr>\n");
@@ -673,11 +674,12 @@ void *Subscriber (void *args)
 					subscriberArgs[pos].flag = 0;
 				} // if()
 
-				fprintf (subFile, "\n</body>\n");
-				fprintf (subFile, "</html>\n");
-
 				free (line);
 			} // while()
+
+
+			fprintf (subFile, "\n</body>\n");
+			fprintf (subFile, "</html>\n");
 
 			fclose (in);
 			fclose (subFile);
@@ -727,10 +729,6 @@ void *Clean (void *args)
 				fflush(stdout);
 			}
 		} // for()
-
-		printf("NUM(%d)\n", NUMPROXIES * 2);
-		printf("free(%d)\n", freeCount);
-		fflush(stdout);
 
 		if ( freeCount == NUMPROXIES * 2 )
 		{
