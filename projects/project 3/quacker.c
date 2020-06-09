@@ -13,12 +13,12 @@
 #define TRUE 1
 #define FALSE 0
 #define DEBUG FALSE
-#define MAXENTRIES 10
+#define MAXENTRIES 5
 #define URLSIZE 256
 #define CAPSIZE 256
 #define NUMPROXIES 10
 #define MAXNAME 256
-#define MAXTOPICS 10
+#define MAXTOPICS 5
 
 char *left_trim (char *s)
 {
@@ -390,10 +390,10 @@ void *Publisher (void *args)
 				getline (&line, &length, pubFile);
 				sscanf (line, "%15s", cmd);
 
-				printf ("--> cmd(%s)\n\n", cmd);
-				fflush (stdout);
+				// printf ("--> cmd(%s)\n\n", cmd);
+				// fflush (stdout);
 
-				if ( strcmp (cmd, "put") == 0 )
+				if ( strcmp (trim(cmd), "put") == 0 )
 				{
 					int id;
 					char url[URLSIZE];
@@ -416,7 +416,7 @@ void *Publisher (void *args)
 					enqueue (id, pubPtr);
 
 				} // if()
-				else if ( strcmp (cmd, "sleep") == 0 )
+				else if ( strcmp (trim(cmd), "sleep") == 0 )
 				{
 					int time;
 					sscanf (line, "sleep %d", &time);
@@ -432,7 +432,7 @@ void *Publisher (void *args)
 					} // else()
 				} // if()
 
-				else if ( strcmp (cmd, "stop") == 0 )
+				else if ( strcmp (trim(cmd), "stop") == 0 )
 				{
 					printf ("Proxy thread %ld - Type:(Publisher) - Executed command: stop\n", pthread_self ());
 					publisherArgs[pubPos].flag = 0;
@@ -566,7 +566,8 @@ void *Subscriber (void *args)
 
 					j ++;
 					token = strtok_r (NULL, " ", &save_ptr);
-				}
+				} // while()
+
 				if ( strcmp (strArr[0], "get") == 0 )
 				{
 					printf ("Proxy Thread: %ld - type: Subscriber - Executed command : get\n", pthread_self ());
@@ -630,13 +631,13 @@ void *Subscriber (void *args)
 
 				} // if()
 
-				if ( strcmp (strArr[0], "sleep") == 0 )
+				else if ( strcmp (strArr[0], "sleep") == 0 )
 				{
 					printf ("Proxy Thread: %ld - type: Subscriber - Executed command : sleep\n", pthread_self ());
 					usleep (atoi (strArr[1]));
 				} // if()
 
-				if ( strcmp (strArr[0], "stop") == 0 )
+				else if ( strcmp (strArr[0], "stop") == 0 )
 				{
 					printf ("Proxy Thread : %ld - Type: Subscriber - executed command : stop\n", pthread_self ());
 					subscriberArgs[pos].flag = 0;
@@ -646,7 +647,7 @@ void *Subscriber (void *args)
 				fprintf (subFile, "</html>\n");
 
 				free (line);
-			}
+			} // while()
 
 			fclose (in);
 			fclose (subFile);
@@ -668,6 +669,7 @@ void *Clean (void *args)
 	int b = 0;
 	while ( b == 0 )
 	{
+		wait(5);
 		dequeue ();
 
 		int freeCount = 0;
@@ -694,18 +696,12 @@ void *Clean (void *args)
 	} // while()
 } // clean()
 
-/*
-test the clean function
-*/
-void *testClean (void *args)
-{
-	dequeue ();
-	return 0;
-} // testClean()
-
 
 /*
-
+initBuffer (int len, int id, char *name)
+len - length of the buffer
+id - topic id for the buffer
+name - buffer name
 */
 void initBuffer (int len, int id, char *name)
 {
@@ -741,7 +737,7 @@ void initBuffer (int len, int id, char *name)
 
 } // initBuffer()
 
-void startCom ()
+void Start ()
 {
 	pthread_cond_broadcast (&conditions);
 }
@@ -786,12 +782,12 @@ int main (int argc, char *argv[])
 		getline (&line, &length, file);
 		sscanf (line, "%15s", cmd);
 
-		if ( DEBUG )
-		{
-			printf ("--> %s\n", line);
-			printf ("---> %s\n", cmd);
-			fflush (stdout);
-		}
+		// if ( DEBUG )
+		// {
+		// 	printf ("--> %s\n", line);
+		// 	printf ("---> %s\n", cmd);
+		// 	fflush (stdout);
+		// }
 
 		if ( strcmp (cmd, "create") == 0 )
 		{
@@ -853,8 +849,6 @@ int main (int argc, char *argv[])
 
 			sscanf (line, "add %63s \"%127[^\"]\"", variable, filename);
 
-			printf ("<<<<<<< (%s) >> \n\n", filename);
-
 			if ( strcmp (variable, "publisher") == 0 )
 			{
 				for ( int i = 0; i < NUMPROXIES; i ++ )
@@ -913,7 +907,7 @@ int main (int argc, char *argv[])
 		else if ( strcmp (cmd, "start") == 0 )
 		{
 			pthread_create (&cleanup, NULL, &Clean, NULL);
-			startCom ();
+			Start ();
 		} // else if()
 		free (line);
 	} // while()
