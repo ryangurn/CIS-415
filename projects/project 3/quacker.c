@@ -1,748 +1,967 @@
 #define  _GNU_SOURCE
+
 #include <ctype.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <pthread.h>
-#include <semaphore.h>
-#include <sys/time.h>
-#include <unistd.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <pthread.h>
+#include <sys/types.h>
+#include <sys/syscall.h>
 
-#define true 1
-#define false 0
+#define TRUE 1
+#define FALSE 0
+#define DEBUG FALSE
+#define MAXENTRIES 10
+#define URLSIZE 256
+#define CAPSIZE 256
+#define NUMPROXIES 10
+#define MAXNAME 256
+#define MAXTOPICS 10
 
-#define MAXBUFFERS 10
-#define MAXENTRIES 100
-#define MAXPUBLISHERS 50
-#define MAXSUBSCRIBERS 50
-#define MAXTOPICS 1000
+char *left_trim (char *s)
+{
+	while ( isspace(*s)) s ++;
+	return s;
+}
 
-char *left_trim(char *s){ while(isspace(*s)) s++; return s; }
-char *right_trim(char *s){ char *back = s + strlen(s); while(isspace(*--back)); *(back+1) = '\0'; return s; }
-char *trim(char *s){ return right_trim(left_trim(s));  }
+char *right_trim (char *s)
+{
+	char *back = s + strlen (s);
+	while ( isspace(*-- back));
+	*( back + 1 ) = '\0';
+	return s;
+}
 
+char *trim (char *s)
+{ return right_trim (left_trim (s)); }
 
-typedef struct {
-	int entryNum;              // entry number
-	struct timeval timeStamp;  // created time
-	int pubID;                 // publisher id
-	char photoURL[1000];       // url of topic
-	char photoCaption[1000];   // photo caption
+typedef struct
+{
+	int entryNum;                              // entry number
+	struct timeval timeStamp;                  // created time
+	pthread_t pubID;                           // publisher id
+	char photoURL[URLSIZE];                    // url of topic
+	char photoCaption[CAPSIZE];                // photo caption
 } topicEntry;
 
-typedef struct {
-	int id;										// queues id
-	char name[50];            // queues name
-	int entryNum;             // int to reference the entryNum
-	int head;                 // head of the queue
-	int tail;                 // tail of the queue
-	int max;                  // length of the queue
-	topicEntry *t;            // topic array
-	pthread_mutex_t mutex;    // mutex lock
-} topicEntryQueue;
-
-typedef struct {
-	pthread_t thread;         // thread
-	int flag;                 // free or nah
-	char location[1024];
-	// we might need some char or something here
-} threadArguements;
-
-topicEntryQueue Queues[MAXBUFFERS];
-topicEntry arr[MAXTOPICS][MAXENTRIES+1];
-
-pthread_mutex_t publisher_lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t subscriber_lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t condition;
-pthread_t publishers[MAXPUBLISHERS];
-pthread_t subscribers[MAXSUBSCRIBERS];
-pthread_attr_t attributes;
-
-threadArguements publisherArgs[MAXPUBLISHERS];
-threadArguements subscriberArgs[MAXSUBSCRIBERS];
-
-int diffDelta;
-int entryValue = 1;
-static int status = 0;
-static int topics = 0;
-topicEntry null = {-1};
-
-int enqueue(int topicEntryQueueID, topicEntry TE)
+typedef struct
 {
-	int i;																						// iterator
-	int found = -1;																		// have we found the queue
-	topicEntryQueue tmp;														// tmp location to store queue
-	for (i = 0; i < MAXTOPICS; i++)
-	{
-		if(Queues[i].id == topicEntryQueueID)
-		{
-			tmp = Queues[i];
-			found = i;
-			break;
-		}
-	} // for()
+	int head, tail, length, counter, topicID; // head, tail, length, counter &
+	// topic for various purposes
+	topicEntry *buffer;                       // buffer for storing topicEntry
+	char name[MAXNAME];                      // name of the queue
+	pthread_mutex_t primaryMutex;             // the main mutex
+	pthread_mutex_t secondaryMutex;           // secondary mutex
+} Buffer;
 
-	// if we have not found the item
-	if (found == -1)
-	{
-		return 0;
-	}
-
-	if (tmp.t[tmp.tail].entryNum == -1)
-	{
-		return 0;
-	}
-	else
-	{
-		// insert the topic into the queue and timestamp it
-		TE.entryNum = tmp.entryNum;
-		gettimeofday(&TE.timeStamp, NULL);
-		tmp.t[tmp.tail] = TE;
-
-		if (tmp.tail + 1 > tmp.max)
-		{
-			tmp.tail = 0;
-		}
-		else
-		{
-			tmp.tail++;
-		}
-
-		tmp.entryNum++;
-	}
-
-	return 1;
-
-}
-
-int ts_enqueue(int topicEntryQueueID, topicEntry TE)
+typedef struct
 {
-	int i;
-	int failed;
-	int found = -1;
+	pthread_t ID;                             // the thread id
+	int flag;                                 // flag to change state
+	char location[MAXNAME];                   // name of thread
+} threadArgs;
 
-	time_t entry;
 
-	for ( i = 0; i < MAXTOPICS; i++)
-	{
-		if (Queues[i].id = topicEntryQueueID)
-		{
-			found = i;
-			break;
-		}
-	} // for()
+int numTopics = 0;          // the number of total topics
+int positionTopic = 0;      // position to init
+float Delta = 0;              // the delta
 
-	// not found
-	if (found == -1)
-	{
-		return 0;
-	}
+Buffer Queue[MAXTOPICS];    // registry that will hold kinda everything
+// thread arguements for publishers and subscribers
+threadArgs publisherArgs[NUMPROXIES];
+threadArgs subscriberArgs[NUMPROXIES];
+// null and empty entries for init
+topicEntry nullTopic = {.entryNum = - 1};
+topicEntry emptyTopic = {.entryNum = 0};
 
-	pthread_mutex_lock(&Queues[i].mutex); // locked
+// initialize mutex and thread conditions
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t conditions = PTHREAD_COND_INITIALIZER;
 
-	failed = enqueue(topicEntryQueueID, TE); // enqueue it
-
-	pthread_mutex_unlock(&Queues[i].mutex); // unlocked
-
-	if (failed == 0)
-	{
-		return 0; // failed
-	}
-	else
-	{
-		return 1; // success
-	}
-}
-
-int get_entry(int topicEntryQueueID, int entry, topicEntry *TE)
+/*
+ Enqueue(int id, topicEntry topic)
+ id - the id of the queue that we are insertting the topic entry
+ topic - the topicEntry data that is being enqueued
+*/
+int enqueue (int id, topicEntry *topic)
 {
-	int i;
-	int found = -1;
-
-	topicEntryQueue tmp;
-	for (i = 0; i < MAXTOPICS; i++) {
-		if (Queues[i].id == topicEntryQueueID)
+	for ( int i = 0; i < numTopics; i ++ )
+	{
+		// find the topic buffer
+		if ( id == Queue[i].topicID )
 		{
-			tmp = Queues[i];
-			found = i;
-			break;
-		}
-	} // for()
 
-	if (found == -1)
-	{
-		return 0;
-	}
-
-	if (tmp.tail == tmp.head)
-	{
-		return 0;
-	}
-
-	int k = 0;
-	// find the next topic and save it to the given ptr
-	for (k; k < tmp.max; k++)
-	{
-		if (tmp.t[k].entryNum > entry)
-		{
-			if (tmp.t[k].entryNum > entry)
+			pthread_mutex_lock (&Queue[i].primaryMutex); // lock primary
+			// if we cannot get the secondary lock then unlock the primary & attempt to get
+			// the secondary mutex. This ensures that we are getting things locked correctly
+			while ( pthread_mutex_trylock (&Queue[i].secondaryMutex) != 0 )
 			{
-				strcpy(TE->photoCaption, tmp.t[k].photoCaption);
-				strcpy(TE->photoURL, tmp.t[k].photoURL);
-				TE->pubID = tmp.t[k].pubID;
-				TE->entryNum = tmp.t[k].entryNum;
-				TE->timeStamp = tmp.t[k].timeStamp;
+				pthread_mutex_unlock (&Queue[i].primaryMutex); // unlock primary
+				sched_yield ();
+				pthread_mutex_lock (&Queue[i].primaryMutex); // lock seoncdary
+			} // while()
+
+			// if the queue is full
+			if ( Queue[i].buffer[Queue[i].tail].entryNum == - 1 )
+			{
+				if ( DEBUG )
+				{
+					printf ("The queue(%d) is full\n", id);
+				}
+
+				// unlock both primary and secondary mutex
+				pthread_mutex_unlock (&Queue[i].primaryMutex);
+				pthread_mutex_unlock (&Queue[i].secondaryMutex);
+
+				return 0; // stop
+			} // if()
+
+			// set the entry and timestamp
+			topic->entryNum = Queue[i].counter;
+			gettimeofday (&topic->timeStamp, NULL);
+
+			// move counter/tail forward, set the the buffer
+			Queue[i].counter = Queue[i].counter + 1;
+			Queue[i].buffer[Queue[i].tail] = *topic;
+			Queue[i].tail = Queue[i].tail + 1;
+
+			// check if the tail is at the end
+			if ( Queue[i].tail == Queue[i].length )
+			{
+				Queue[i].tail = 0;
+			} // if()
+
+			if ( DEBUG )
+			{
+				printf ("Enqueued!\n");
 			}
 
-			if (k == tmp.max)
+			// unlock both mutexs
+			pthread_mutex_unlock (&Queue[i].primaryMutex);
+			pthread_mutex_unlock (&Queue[i].secondaryMutex);
+
+			// return 1;
+			return 1;
+
+		} // if()
+
+	} // for()
+
+	if ( DEBUG )
+	{
+		printf ("The queue(%d) was not found\n", id);
+	}
+	return 0;
+
+} // enqueue()
+
+/*
+Dequeue(null)
+*/
+int dequeue ()
+{
+	// setup current time for comparison
+	struct timeval curr;
+	gettimeofday (&curr, NULL);
+	for ( int i = 0; i < numTopics; i ++ )
+	{
+		// lock the primary mutex
+		pthread_mutex_lock (&Queue[i].primaryMutex);
+		// if we cannot get the secondary lock then unlock the primary & attempt to get
+		// the secondary mutex. This ensures that we are getting things locked correctly
+		while ( pthread_mutex_trylock (&Queue[i].secondaryMutex) != 0 )
+		{
+			pthread_mutex_unlock (&Queue[i].primaryMutex); // unlock primary
+			sched_yield ();
+			pthread_mutex_lock (&Queue[i].primaryMutex); // lock seoncdary
+		} // while()
+
+		// loop through the buffer itself
+		for ( int j = 0; j < Queue[i].length;
+		      j ++ ) //TODO: DETERMINE IF THIS IS NEEDED (I DONT THINK SO BUT I WILL CHECK)
+		{
+			if ( Queue[i].buffer[Queue[i].head].entryNum > 0 )
 			{
-				strcpy(TE->photoCaption, tmp.t[tmp.head].photoCaption);
-				strcpy(TE->photoURL, tmp.t[tmp.head].photoURL);
-				TE->pubID = tmp.t[tmp.head].pubID;
-				TE->entryNum = tmp.t[tmp.head].entryNum;
-				TE->timeStamp = tmp.t[tmp.head].timeStamp;
-			}
-			else
+				// have we been waiting too long
+				if ( curr.tv_sec - Queue[i].buffer[Queue[i].head].timeStamp.tv_sec > Delta )
+				{
+
+					Queue[i].buffer[Queue[i].head] = nullTopic;
+
+					// check if the head is at the start
+					if ( Queue[i].head == 0 )
+					{
+						Queue[i].buffer[Queue[i].length - 1] = emptyTopic; // set the last item to the empty topic
+					}
+					else // otherwise use the head
+					{
+						Queue[i].buffer[Queue[i].head - 1] = emptyTopic; // set the last item to the empty topic
+					} // if()
+
+					// iterate the head;
+					Queue[i].head = Queue[i].head + 1;
+
+					// if the head is at the end
+					if ( Queue[i].head == Queue[i].length )
+					{
+						Queue[i].head = 0; // reset to start
+					} // if()
+
+					printf ("Dequeued!\n");
+
+				} // if()
+
+			} // if()
+		} // for()
+
+		// unlock
+		pthread_mutex_unlock (&Queue[i].primaryMutex);
+		pthread_mutex_unlock (&Queue[i].secondaryMutex);
+
+	} // for()
+
+	return 0;
+} // dequeue()
+
+/*
+entry(int id, int last, topicEntry *topic)
+id - The id of the queue that we are looking for
+last - the last entry in the queue
+topic - the topic that we are attempting to find
+*/
+int entry (int id, int last, topicEntry *topic)
+{
+	// loop through topic buffers
+	for ( int i = 0; i < numTopics; i ++ )
+	{
+		// can we identify the correct queue
+		if ( id == Queue[i].topicID )
+		{
+
+			// lock the primary mutex
+			pthread_mutex_lock (&Queue[i].primaryMutex);
+			// if we cannot get the secondary lock then unlock the primary & attempt to get
+			// the secondary mutex. This ensures that we are getting things locked correctly
+			while ( pthread_mutex_trylock (&Queue[i].secondaryMutex) != 0 )
 			{
-				strcpy(TE->photoCaption, tmp.t[k+1].photoCaption);
-				strcpy(TE->photoURL, tmp.t[k+1].photoURL);
-				TE->pubID = tmp.t[k+1].pubID;
-				TE->entryNum = tmp.t[k+1].entryNum;
-				TE->timeStamp = tmp.t[k+1].timeStamp;
-			}
+				pthread_mutex_unlock (&Queue[i].primaryMutex); // unlock primary
+				sched_yield ();
+				pthread_mutex_lock (&Queue[i].primaryMutex); // lock seoncdary
+			} // while()
+
+			// check for empty Queue
+			if ( Queue[i].head == Queue[i].tail )
+			{
+
+				if ( DEBUG )
+				{
+					printf ("The queue(%d) is empty\n", id);
+				}
+
+				// unlock the mutex's
+				pthread_mutex_unlock (&Queue[i].primaryMutex);
+				pthread_mutex_unlock (&Queue[i].secondaryMutex);
+
+				//stop
+				return 0;
+
+				int j = Queue[i].head;
+				// loop until we are done
+				while ( j != - 1 )
+				{
+
+					if ( Queue[i].buffer[j].entryNum >= last + 1 )
+					{
+						*topic = Queue[i].buffer[j];
+						if ( Queue[i].buffer[j].entryNum > last + 1 )
+						{
+							pthread_mutex_unlock (&Queue[i].primaryMutex);
+							pthread_mutex_unlock (&Queue[i].secondaryMutex);
+							return Queue[i].buffer[j].entryNum;
+						} // if()
+
+						pthread_mutex_unlock (&Queue[i].primaryMutex);
+						pthread_mutex_unlock (&Queue[i].secondaryMutex);
+						return 1;
+					} // if()
+
+					if ( j == Queue[i].length - 1 )
+					{
+						if ( Queue[i].head == 0 )
+						{
+							pthread_mutex_unlock (&Queue[i].primaryMutex);
+							pthread_mutex_unlock (&Queue[i].secondaryMutex);
+							return 0;
+						} // if()
+						j = 0;
+					} // if()
+
+					if ( j == Queue[i].head - 1 )
+					{
+
+						pthread_mutex_unlock (&Queue[i].primaryMutex);
+						pthread_mutex_unlock (&Queue[i].secondaryMutex);
+						return 0;
+
+					} // if()
+					j = j + 1;
+
+				} // while()
+
+				pthread_mutex_unlock (&Queue[i].primaryMutex);
+				pthread_mutex_unlock (&Queue[i].secondaryMutex);
+				return 0;
+
+			} // if()
 
 		} // if()
 	} // for()
-	return 1;
-}
-
-int ts_get_entry(int topicEntryQueueID)
-{
-	int i;
-	int found = -1;
-
-	for (i = 0; i < MAXTOPICS; i++)
+	if ( DEBUG )
 	{
-		if (Queues[i].id == topicEntryQueueID)
+		printf ("The queue(%d) was not found\n", id);
+	}
+	return 0;
+} // entry()
+
+/*
+position(pthread_t id, int flag)
+id - the thread that we are attempting to find in either the publisher or subscriber thread pools
+flag - the way to denote if we are looking for sub = 1, or pub = 0
+*/
+int position (pthread_t id, int flag)
+{
+	for ( int i = 0; i < NUMPROXIES; i ++ )
+	{
+		if ( flag == 0 )
 		{
-			found = i;
-			break;
-		}
+			if ( id == publisherArgs[i].ID )
+			{
+				return i;
+			} // if()
+		} // if()
+
+		if ( flag == 1 )
+		{
+			if ( id == subscriberArgs[i].ID )
+			{
+				return i;
+			}
+		} //if()
+	} // for()
+	return - 1;
+} // position()
+
+/*
+Publisher()
+*/
+void *Publisher (void *args)
+{
+	printf ("Proxy thread %ld - Type(Publisher)\n", pthread_self ());
+
+
+	int pubPos = - 1;
+	int processing = 1;
+	while ( processing == 1 )
+	{
+		// lock the main mutex
+		pthread_mutex_lock (&mutex);
+		pthread_cond_wait (&conditions, &mutex);
+		pthread_mutex_unlock (&mutex);
+
+		pubPos = position (pthread_self (), 0);
+		if ( pubPos != - 1 )
+		{
+			FILE *pubFile = fopen (publisherArgs[pubPos].location, "r");
+
+			if ( pubFile == NULL)
+			{
+				printf ("The publisher file(%s) was not able to be opened!\n", publisherArgs[pubPos].location);
+				return 0;
+			} // if()
+
+			while ( pubFile != NULL)
+			{
+
+				char cmd[32];
+				char *line = NULL;
+				size_t length = 0;
+				getline (&line, &length, pubFile);
+				sscanf (line, "%15s", cmd);
+
+				printf ("--> cmd(%s)\n\n", cmd);
+				fflush (stdout);
+
+				if ( strcmp (cmd, "put") == 0 )
+				{
+					int id;
+					char url[URLSIZE];
+					char caption[CAPSIZE];
+
+					sscanf (line, "put %d \"%254[^\"]\" \"%254[^\"]\"", &id, url, caption);
+
+					if ( id <= 0 || strcmp (url, "") == 0 || strcmp (caption, "") == 0 )
+					{
+						printf ("Invalid arguments for put command. Thread(%ld)\n", pthread_self ());
+						processing = 0;
+					} // if()
+
+					printf ("Proxy thread %ld - Type:(Publisher) - Executed command: put\n", pthread_self ());
+					topicEntry pub = {.pubID = pthread_self ()};
+					strcpy (pub.photoURL, url);
+					strcpy (pub.photoCaption, caption);
+
+					topicEntry *pubPtr = &pub;
+					enqueue (id, pubPtr);
+
+				} // if()
+				else if ( strcmp (cmd, "sleep") == 0 )
+				{
+					int time;
+					sscanf (line, "sleep %d", &time);
+
+					if ( time >= 0 )
+					{
+						printf ("Proxy thread %ld - Type:(Publisher) - Executed command: sleep\n", pthread_self ());
+						usleep (time * 1000);
+					} // if()
+					else
+					{
+						printf ("Invalid arguments for sleep command. Thread(%ld)", pthread_self ());
+					} // else()
+				} // if()
+
+				else if ( strcmp (cmd, "stop") == 0 )
+				{
+					printf ("Proxy thread %ld - Type:(Publisher) - Executed command: stop\n", pthread_self ());
+					publisherArgs[pubPos].flag = 0;
+				} // if()
+				free (line);
+			} // while()
+
+			fclose (pubFile);
+
+		} // if()
+		processing = 0;
+
+	} // while()
+
+	return 0;
+} // publisher()
+
+/*
+
+*/
+void *testPublisher (void *args)
+{
+	printf ("Publisher Test, Thread(%ld) Now Running\n", pthread_self ());
+	topicEntry one = {.photoCaption = "Picture #1"};
+	topicEntry two = {.photoCaption = "Picture #2"};
+	topicEntry three = {.photoCaption = "Picture #3"};
+	topicEntry four = {.photoCaption = "Picture #4"};
+
+	topicEntry *onePtr = &one;
+	topicEntry *twoPtr = &two;
+	topicEntry *threePtr = &three;
+	topicEntry *fourPtr = &four;
+
+	enqueue (1, onePtr);
+	enqueue (1, twoPtr);
+	enqueue (1, threePtr);
+	enqueue (1, fourPtr);
+
+	return 0;
+} // testPublisher()
+
+/*
+
+*/
+void *Subscriber (void *args)
+{
+	printf ("Proxy thread %ld - Type(Subscriber)\n", pthread_self ());
+
+	int pos = - 1;
+	int processing = 1;
+	int lastEntry[MAXTOPICS];
+	int entryReturn = 1;
+
+	for ( int i = 0; i < MAXTOPICS; i ++ )
+	{
+		lastEntry[i] = 1;
 	} // for()
 
-	if (found == -1)
+	while ( processing )
 	{
-		return 0;
-	}
-
-	pthread_mutex_lock(&Queues[found].mutex);
-
-	topicEntry *topic;
-	int current = Queues[found].entryNum;
-	int k = 0;
-	for (k; k <= current; k++)
-	{
-		get_entry(topicEntryQueueID, k, topic);
-	}
-
-	pthread_mutex_unlock(&Queues[found].mutex);
-
-	return 1;
-}
-
-int dequeue()
-{
-	int i = 0;
-	for (i; i < MAXTOPICS; i++)
-	{
-		int k;
-		if (Queues[i].name != NULL)
+		// lock the main mutex
+		pthread_mutex_lock (&mutex);
+		pthread_cond_wait (&conditions, &mutex);
+		pthread_mutex_unlock (&mutex);
+		pos = position (pthread_self (), 1);
+		if ( pos != - 1 )
 		{
-			k = Queues[i].head;
-			for (k; k < Queues[i].tail; k++)
+			char *token = NULL;
+			char location[MAXNAME];
+
+			strcpy (location, subscriberArgs[pos].location);
+
+			// declare vars for determining the new file name
+			char *ext = ".html";
+			char *ptr;
+			token = strtok (location, ".");
+
+			// setup the correct file name
+			if ( token != NULL)
 			{
-				if (strcmp(Queues[i].t[k].photoCaption, "\0") != 0)
+				strncat (token, ext, 6);
+			} // if()
+
+			// open the file to write to
+			FILE *subFile = fopen (token, "w");
+			if ( subFile == NULL)
+			{
+				printf ("File(%s) does not exist and thus cannot be modified\n", token);
+			} // if()
+			else
+			{
+				fprintf (subFile, "<!DOCTYPE html>");
+				fprintf (subFile, "<html>");
+				fprintf (subFile, "<head>");
+				fprintf (subFile, "<title>%s</title>\n\n", token);
+				fprintf (subFile, "<style>\n");
+				fprintf (subFile, "table, th, td {\n");
+				fprintf (subFile, "\tborder: 1px solid black;\n");
+				fprintf (subFile, "\tborder-collapse: collapse;\n");
+				fprintf (subFile, "}\n");
+				fprintf (subFile, "th, td {\n");
+				fprintf (subFile, "\tpadding: 5px;\n");
+				fprintf (subFile, "}\t");
+				fprintf (subFile, "th {\n");
+				fprintf (subFile, "\ttext-align:left;\n");
+				fprintf (subFile, "}\n\n");
+				fprintf (subFile, "</style>\n\n");
+				fprintf (subFile, "</head>");
+				fprintf (subFile, "<body>\n\n");
+				fprintf (subFile, "<h1>Subscriber: %s</h1>", token);
+			}
+
+			// open the input subscriber file
+			FILE *in = fopen (subscriberArgs[pos].location, "r");
+
+			// check for errors
+			if ( in == NULL)
+			{
+				printf ("File(%s) could not be opened\n", subscriberArgs[pos].location);
+				return 0;
+			} // if()
+
+			while ( in != NULL)
+			{
+
+				char cmd[32];
+				char *line = NULL;
+				size_t length = 0;
+				getline (&line, &length, in);
+
+				int j = 0;
+				char *token;
+				char *save_ptr;
+				char str[100];
+				char *strArr[1000];
+
+				token = strtok_r (line, " ", &save_ptr);
+				while ( token != NULL)
 				{
-					struct timeval curr_time;
-					gettimeofday(&curr_time, NULL);
-
-					double diff = (curr_time.tv_sec - Queues[i].t[k].timeStamp.tv_sec) +
-					((curr_time.tv_usec - Queues[i].t[k].timeStamp.tv_usec)/1000000.0);
-
-					if (diff >= diffDelta)
+					if ( token[0] == '"' )
 					{
-						strcpy(Queues[i].t[k].photoCaption, "\0");
-						strcpy(Queues[i].t[k].photoURL, "\0");
-						Queues[i].t[k].entryNum = 0;
-						Queues[i].t[k].pubID = 0;
+						int i;
+						int iter = 0;
+						for ( i = 1; token[i] != '"'; i ++ )
+						{
+							str[iter] = token[i];
+							iter ++;
+						} // for()
+						strArr[j] = str;
+					} // if()
+					else
+					{
+						strArr[j] = token;
+					} // else()
 
-						if (Queues[i].head == Queues[i].max-1)
+					j ++;
+					token = strtok_r (NULL, " ", &save_ptr);
+				}
+				if ( strcmp (strArr[0], "get") == 0 )
+				{
+					printf ("Proxy Thread: %ld - type: Subscriber - Executed command : get\n", pthread_self ());
+					topicEntry ent;
+					topicEntry *entPtr = &ent;
+					int id = atoi (strArr[1]);
+
+					entryReturn = entry (id, lastEntry[id], entPtr);
+
+					if ( entryReturn == 1 )
+					{
+						lastEntry[id] = lastEntry[id] + 1;
+						printf ("URL(%s) | Caption(%s) | ID(%ld)", ent.photoURL, ent.photoCaption, ent.pubID);
+
+						int rPos = 0;
+						for ( int l = 0; l < MAXTOPICS; l ++ )
 						{
-							Queues[i].head = 0;
-						}
-						else
+							if ( id == Queue[l].topicID )
+							{
+								rPos = l;
+							} // if()
+						} // for()
+
+						fprintf (subFile, "\n<h2>Topic Name: %s</h2>\n", Queue[rPos].name);
+						fprintf (subFile,
+						         "<table style='width:100%%\' \align='middle'>\n\t<tr>\n\t\t<th>CAPTION</th>\n\t\t<th>PHOTO-URL</th>\n\t</tr>\n");
+						fprintf (subFile, "\t<tr>");
+						fprintf (subFile, "\t\t<td>%s</td>\n", ent.photoCaption);
+						fprintf (subFile, "\t\t<td>%s</td>\n", ent.photoURL);
+						fprintf (subFile, "\t</tr>\n");
+						fprintf (subFile, "</table>\n");
+
+
+					} // if()
+
+					if ( entryReturn > 1 )
+					{
+						lastEntry[id] = entryReturn;
+						printf ("URL(%s) | Caption(%s) | ID(%ld)", ent.photoURL, ent.photoCaption, ent.pubID);
+
+						int rPos = 0;
+						for ( int f = 0; f < MAXTOPICS; f ++ )
 						{
-							Queues[i].head++;
-						}
+
+							if ( id == Queue[f].topicID )
+							{
+								rPos = f;
+							} // id()
+						} // for()
+
+						fprintf (subFile, "\n<h2>Topic Name: %s</h2>\n", Queue[rPos].name);
+						fprintf (subFile,
+						         "<table style='width:100%%\' \align='middle'>\n\t<tr>\n\t\t<th>CAPTION</th>\n\t\t<th>PHOTO-URL</th>\n\t</tr>\n");
+						fprintf (subFile, "\t<tr>");
+						fprintf (subFile, "\t\t<td>%s</td>\n", ent.photoCaption);
+						fprintf (subFile, "\t\t<td>%s</td>\n", ent.photoURL);
+						fprintf (subFile, "\t</tr>\n");
+						fprintf (subFile, "</table>\n");
 
 					} // if()
 
 				} // if()
-			} // for()
-		}
-		else
-		{
-			continue;
-		}
-	}
-}
 
-void *Publisher(void *args)
-{
-	char *line = NULL;
-	ssize_t number;
-	size_t length = 0;
-
-	FILE *configuration;
-
-	pthread_mutex_lock(&publisher_lock);
-
-	while(((threadArguements *) args)->location == "\0")
-	{
-		pthread_cond_wait(&condition, &publisher_lock);
-	}
-
-	configuration = fopen(((threadArguements *) args)->location, "r");
-	number = getline(&line, &length, configuration);
-
-	do
-	{
-
-		int i, j = 0;
-		char *token;
-		char *save_ptr;
-		char str[100] = "";
-		char *strArr[1000];
-
-		token = strtok_r(line, " ", &save_ptr);
-		while (token != NULL)
-		{
-			if (token[0] == '"')
-			{
-				int i;
-				int iter = 0;
-				for (i = 1; token[i] != '"'; i++)
+				if ( strcmp (strArr[0], "sleep") == 0 )
 				{
-					str[iter] = token[i];
-					iter++;
-				}
-				strArr[j] = str;
-			}
-			else
-			{
-				strArr[j] = token;
-			}
+					printf ("Proxy Thread: %ld - type: Subscriber - Executed command : sleep\n", pthread_self ());
+					usleep (atoi (strArr[1]));
+				} // if()
 
-
-			j++;
-
-			token = strtok_r(NULL, " ", &save_ptr);
-		} // while()
-
-		if (strcmp(trim(strArr[0]), "put") == 0)
-		{
-			int id;
-			// typedef struct {
-			// 	int entryNum;              // entry number
-			// 	struct timeval timeStamp;  // created time
-			// 	int pubID;                 // publisher id
-			// 	char photoURL[1000];       // url of topic
-			// 	char photoCaption[1000];   // photo caption
-			// } topicEntry;
-			id = atoi(strArr[1]);
-			topicEntry TE = {
-				.entryNum = entryValue,
-				.pubID = id
-			};
-			entryValue++;
-			strcpy(TE.photoURL, strArr[2]);
-			strcpy(TE.photoCaption, strArr[3]);
-
-			ts_enqueue(id, TE);
-
-			printf("Proxy Thread: %ld - type: Publisher- Executed Command: put\n", pthread_self());
-		}
-		else if (strcmp(trim(strArr[0]), "sleep") == 0)
-		{
-			int sleep = atoi(strArr[1]);
-			usleep(sleep);
-			printf("Proxy Thread: %ld - type: Publisher- Executed Command: sleep\n", pthread_self());
-		}
-		else if (strcmp(trim(strArr[0]), "stop") == 0)
-		{
-			printf("Proxy Thread: %ld - type: Publisher- Executed Command: stop\n", pthread_self());
-			break;
-		}
-		else
-		{
-			printf("Proxy Thread | type(publisher): unrecognized cmd: %s\n", trim(strArr[0]));
-		}
-
-	} while((number = getline(&line, &length, configuration)) != -1);
-
-	printf("Proxy Thread: %ld - type: Publisher\n", pthread_self());
-	strcpy(((threadArguements *) args)->location, "\0");
-	fclose(configuration);
-
-	pthread_mutex_unlock(&publisher_lock);
-}
-
-void *Subscriber(void *args)
-{
-	char *line = NULL;
-	ssize_t number;
-	size_t length = 0;
-
-	FILE *configuration;
-
-	pthread_mutex_lock(&subscriber_lock);
-	while (((threadArguements *) args)->location == "\0")
-	{
-		pthread_cond_wait(&condition, &subscriber_lock);
-	}
-
-	configuration = fopen(((threadArguements *) args)->location, "r");
-	number = getline(&line, &length, configuration);
-
-	do
-	{
-		int i = 0;
-		int j = 0;
-		char *token;
-		char *save_ptr;
-		char str[100];
-		char *strArr[1000];
-
-		token = strtok_r(line, " ", &save_ptr);
-		while ( token != NULL )
-		{
-			if (token[0] == '"')
-			{
-				int i;
-				int iter = 0;
-				for (i = 1; token[i] != '"'; i++)
+				if ( strcmp (strArr[0], "stop") == 0 )
 				{
-					str[iter] = token[i];
-					iter++;
-				}
-				strArr[j] = str;
+					printf ("Proxy Thread : %ld - Type: Subscriber - executed command : stop\n", pthread_self ());
+					subscriberArgs[pos].flag = 0;
+				} // if()
+
+				fprintf (subFile, "\n</body>\n");
+				fprintf (subFile, "</html>\n");
+
+				free (line);
 			}
-			else
+
+			fclose (in);
+			fclose (subFile);
+
+		} // if()
+
+		processing = 0;
+
+	} // while()
+	return 0;
+} // subscriber()
+
+/*
+
+*/
+void *testSubscriber (void *args)
+{
+	printf ("Subscriber Test, Thread(%ld) Now Running\n", pthread_self ());
+	topicEntry topic = emptyTopic;
+	topicEntry *topicPtr = &topic;
+
+	entry (1, 0, topicPtr);
+	printf ("%s\n", topic.photoCaption);
+	return 0;
+} // testSubscriber()
+
+/*
+
+*/
+void *Clean (void *args)
+{
+	printf ("Clean Thread Running thread(%ld), running now\n", pthread_self ());
+	int b = 0;
+	while ( b == 0 )
+	{
+		dequeue ();
+
+		int freeCount = 0;
+		for ( int m = 0; m < NUMPROXIES; m ++ )
+		{
+			if ( subscriberArgs[m].flag == 0 )
 			{
-				strArr[j] = token;
-			}
-
-			j++;
-			token = strtok_r(NULL, " ", &save_ptr);
-
-		} // while()
+				freeCount = freeCount + 1;
+			} // if
 
 
-		if (strcmp(trim(strArr[0]), "get") == 0)
+			if ( publisherArgs[m].flag == 0 )
+			{
+				freeCount = freeCount + 1;
+			} // if
+		} // for()
+
+		if ( freeCount == NUMPROXIES * 2 )
 		{
-			ts_get_entry(atoi(strArr[1]));
-			printf("Proxy Thread: %ld - type: Subscriber - Executed command : get\n", pthread_self());
-		}
-		else if (strcmp(trim(strArr[0]), "sleep") == 0)
-		{
-			usleep(atoi(strArr[1]));
-			printf("Proxy thread: %ld - Type: Subscriber - Executed Command: sleep\n", pthread_self());
-		}
-		else if (strcmp(trim(strArr[0]), "stop") == 0)
-		{
-			printf("Proxy Thread : %ld - Type: Subscriber - executed command : stop\n", pthread_self());
-			break;
-		}
-		else
-		{
-			printf("Proxy Thread | type(subscriber): unrecognized cmd: %s\n", trim(strArr[0]));
+			printf ("Clean thread stopping\n");
+			return;
 		}
 
-	} while((number = getline(&line, &length, configuration)) != -1);
+	} // while()
+} // clean()
 
-	printf("Proxy thread: %ld | type : Subscriber\n", pthread_self());
-	strcpy(((threadArguements *) args)->location, "\0");
-	fclose(configuration);
+/*
+test the clean function
+*/
+void *testClean (void *args)
+{
+	dequeue ();
+	return 0;
+} // testClean()
 
-	pthread_mutex_unlock(&subscriber_lock);
+
+/*
+
+*/
+void initBuffer (int len, int id, char *name)
+{
+	topicEntry buf[len + 1];
+
+	for ( int s = 0; s < len; s ++ )
+	{
+		buf[s] = emptyTopic;
+	} // for()
+
+	buf[len] = nullTopic;
+
+	Buffer buffer = {.buffer = buf, .head = 0, .tail = 0, .length = len +
+	                                                                1, .counter = 1, .primaryMutex = PTHREAD_MUTEX_INITIALIZER, .secondaryMutex = PTHREAD_MUTEX_INITIALIZER, .topicID = id};
+	strcpy (buffer.name, name);
+
+	if ( numTopics == MAXTOPICS )
+	{
+		Queue[positionTopic] = buffer;
+		positionTopic ++;
+
+		if ( positionTopic == MAXTOPICS )
+		{
+			positionTopic = 0;
+		}
+
+	} // if()
+	else
+	{
+		Queue[numTopics] = buffer;
+		numTopics ++;
+	} // else
+
+} // initBuffer()
+
+void startCom ()
+{
+	pthread_cond_broadcast (&conditions);
 }
 
-void *Cleaner(void *args)
+/*
+
+*/
+int main (int argc, char *argv[])
 {
-	struct timeval start, curr;
-	gettimeofday(&start, NULL);
-	while (true)
+	if ( argv[1] == NULL || argv[2] != NULL)
 	{
-		//get the time of gettimeofday
-		gettimeofday(&curr, NULL);
-
-		// get elapsed
-		double elapsed = (curr.tv_sec - start.tv_sec) + ((curr.tv_usec - start.tv_usec)/1000000.0);
-
-		if (elapsed >= diffDelta + 5)
-		{
-			dequeue();
-			gettimeofday(&start, NULL);
-		}
-		else
-		{
-			sched_yield();
-		}
-	}
-}
-
-int check_arguments(char *argv[])
-{
-	if (argv[1] == NULL || argv[2] != NULL)
-	{
-		return true; //err
-	}
-	return false;
-}
-
-int main(int argc, char *argv[])
-{
-	if (check_arguments(argv))
-	{
-		printf("Error: invalid args\n");
-		exit(1);
+		printf ("Error: invalid args\n");
+		exit (1);
 	}
 
-	FILE *file = fopen(argv[1], "r");
-	if (file == NULL)
+	FILE *file = fopen (argv[1], "r");
+	if ( file == NULL)
 	{
-		printf("Error: failed to open file.\n");
-		exit(1);
+		printf ("Error: failed to open file.\n");
+		exit (1);
 	}
 
-	size_t length = 0;
-	int numberOfPublishers = 0;
-	int numberOfSubscribers = 0;
-	pthread_attr_init(&attributes);
-	pthread_t cleanerThread;
+	pthread_t threads[NUMPROXIES * 2];
+	pthread_t cleanup;
 
-	while (file != NULL && status == 0) {
+	for ( int i = 0; i < NUMPROXIES; i ++ )
+	{
+		pthread_create (&threads[i], NULL, &Publisher, NULL);
+		publisherArgs[i].ID = threads[i];
+		publisherArgs[i].flag = 0;
+
+		pthread_create (&threads[i + NUMPROXIES], NULL, &Subscriber, NULL);
+		subscriberArgs[i].ID = threads[i + NUMPROXIES];
+		subscriberArgs[i].flag = 0;
+	}
+
+	while ( file != NULL)
+	{
+		size_t length = 0;
 		char *line = NULL;
 		char cmd[32];
-		getline(&line, &length, file);
-		sscanf(line, "%15s", cmd);
+		getline (&line, &length, file);
+		sscanf (line, "%15s", cmd);
 
-		printf("--> %s\n",line);
-		fflush(stdout);
-		printf("---> %s\n",cmd);
-		fflush(stdout);
+		if ( DEBUG )
+		{
+			printf ("--> %s\n", line);
+			printf ("---> %s\n", cmd);
+			fflush (stdout);
+		}
 
-		if (strcmp(cmd, "create") == 0)
+		if ( strcmp (cmd, "create") == 0 )
 		{
 			int topicID = 0;
 			int queueLength;
 			char name[256] = "";
 
-			sscanf(line, "create topic %d \"%127[^\"]\" %d", &topicID, name, &queueLength);
-			if (topicID <= 0 || queueLength <= 0 || strcmp(name, "") == 0)
+			sscanf (line, "create topic %d \"%127[^\"]\" %d", &topicID, name, &queueLength);
+			if ( topicID <= 0 || queueLength <= 0 || strcmp (name, "") == 0 )
 			{
-				printf("Error: could not create topic, null information\n");
-				status = 1;
-			}
+				printf ("Error: could not create topic, null information\n");
+			} // if()
 			else
 			{
-				topicEntryQueue teq = {
-					.id = topicID,
-					.head = 0,
-					.tail = 0,
-					.max = queueLength,
-					.mutex = PTHREAD_MUTEX_INITIALIZER,
-				};
-
-				// for (size_t i = 0; i < queueLength+1; i++) {
-				// 	teq.t[i] = (topicEntry*)malloc(sizeof(topicEntry));
-				// }
-
-				teq.t = (topicEntry *)malloc(sizeof(topicEntry) * (queueLength + 1));
-				teq.t[queueLength].entryNum = -1;
-				Queues[topics] = teq;
-				topics++;
-			}
-		}
-		else if (strcmp(cmd, "query") == 0)
+				initBuffer (length, topicID, name);
+				printf ("Topic Created!\n");
+			} // else
+		} // if()
+		else if ( strcmp (cmd, "query") == 0 )
 		{
 			char variable[128];
 			int k;
-			sscanf(line, "query %63s", variable);
+			sscanf (line, "query %63s", variable);
 
-			if (strcmp(variable, "publishers") == 0)
+			if ( strcmp (variable, "publishers") == 0 )
 			{
-				for (k = 0; k < numberOfPublishers; k++)
+				for ( int i = 0; i < NUMPROXIES; i ++ )
 				{
-					if (publisherArgs[k].flag != 0)
+					if ( publisherArgs[i].flag == 1 )
 					{
-						threadArguements argz = publisherArgs[k];
-						printf("Publisher(%d) - File: %s\n", argz.flag, argz.location);
+						printf ("Publisher Thread(%ld), Location(%s)\n", publisherArgs[i].ID,
+						        publisherArgs[i].location);
 					}
-				}
-			}
-			else if(strcmp(variable, "subscribers") == 0)
+				} // for()
+			} // if()
+			else if ( strcmp (variable, "subscribers") == 0 )
 			{
-				for (k = 0; k < numberOfSubscribers; k++)
+				for ( int i = 0; i < NUMPROXIES; i ++ )
 				{
-					if (subscriberArgs[k].flag != 0)
+					if ( subscriberArgs[i].flag == 1 )
 					{
-						threadArguements argz = subscriberArgs[k];
-						printf("Subscriber(%d) - File: %s\n", argz.flag, argz.location);
+						printf ("Subscriber Thread(%ld), Location(%s)\n", subscriberArgs[i].ID,
+						        subscriberArgs[i].location);
 					}
-				}
-			}
-			else if (strcmp(variable, "topics") == 0)
+				} // for()
+			} // else if()
+			else if ( strcmp (variable, "topics") == 0 )
 			{
-				for (k = 0; k < MAXTOPICS; k++)
+				for ( int i = 0; i < numTopics; i ++ )
 				{
-					if (Queues[k].max != 0)
-					{
-						topicEntryQueue tq = Queues[k];
-						printf("Queue(%d) - Length: %d\n", tq.id, tq.max);
-					}
-				}
+					printf ("ID(%d), Len(%d)\n", Queue[i].topicID, Queue[i].length);
+				} //for()
 			}
-			else
-			{
-				printf("Error: command was not recognised for querying: %s\n", variable);
-				status = 1;
-			}
-		}
-		else if (strcmp(cmd, "add") == 0)
+		}// else if()
+		else if ( strcmp (cmd, "add") == 0 )
 		{
 			char variable[128];
 			char filename[128] = "";
-			int result = 0;
 
-			sscanf(line, "add %63s \"%127[^\"]\"", variable, filename);
-			if (strcmp(variable, "publisher") == 0)
+			sscanf (line, "add %63s \"%127[^\"]\"", variable, filename);
+
+			printf ("<<<<<<< (%s) >> \n\n", filename);
+
+			if ( strcmp (variable, "publisher") == 0 )
 			{
-				int found = 0;
-				int i = 0;
-				for (i; i < MAXPUBLISHERS; i++)
+				for ( int i = 0; i < NUMPROXIES; i ++ )
 				{
-					if(publisherArgs[i].flag == 1)
+					if ( publisherArgs[i].flag == 0 )
 					{
-						found = 1;
-						break;
+						publisherArgs[i].flag = 1;
+						strcpy (publisherArgs[i].location, filename);
+						i = NUMPROXIES;
+						printf ("Added publisher\n");
+					} // if()
+
+					if ( i == NUMPROXIES - 1 )
+					{
+						printf ("No free threads in the pool of publishers\n");
 					} // if()
 				} // for()
-
-				if (found == 0)
-				{
-					for (i; i < MAXPUBLISHERS; i++) {
-						if (publisherArgs[i].flag == 0)
-						{
-							found = 1;
-							break;
-						} // if()
-					} // for()
-				} // if()
-
-
-				publisherArgs[i].flag = 2;
-				strcpy(publisherArgs[i].location, filename);
-				pthread_create(&publisherArgs[i].thread, NULL, Publisher, (void *)&publisherArgs[i]);
-
-				publisherArgs[i].flag = 1;
-			}
-			else if (strcmp(variable, "subscriber") == 0)
+			} // if()
+			else if ( strcmp (variable, "subscriber") == 0 )
 			{
-				int found = 0;
-				int i = 0;
-				for (i; i < MAXSUBSCRIBERS; i++)
+				for ( int i = 0; i < NUMPROXIES; i ++ )
 				{
-					if(subscriberArgs[i].flag == 1)
+					if ( subscriberArgs[i].flag == 0 )
 					{
-						found = 1;
-						break;
+						subscriberArgs[i].flag = 1;
+						strcpy (subscriberArgs[i].location, filename);
+						i = NUMPROXIES;
+						printf ("Added subscriber\n");
+					} // if()
+
+					if ( i == NUMPROXIES - 1 )
+					{
+						printf ("No free threads in the pool of subscribers\n");
 					} // if()
 				} // for()
-
-				if (found == 0)
-				{
-					for (i; i < MAXSUBSCRIBERS; i++) {
-						if (subscriberArgs[i].flag == 0)
-						{
-							found = 1;
-							break;
-						} // if()
-					} // for()
-				} // if()
-
-				subscriberArgs[i].flag = 2;
-				strcpy(subscriberArgs[i].location, filename);
-				pthread_create(&subscriberArgs[i].thread, NULL, Subscriber, (void *)&subscriberArgs[i]);
-
-				subscriberArgs[i].flag = 1;
-			}
+			} // else if()
 			else
 			{
-				printf("Error: unrecognized item to append: %s\n", variable);
-				result = 1;
-			}
-		}
-		else if (strcmp(cmd, "delta") == 0)
+				printf ("Error: unrecognized item to append: %s\n", variable);
+			} // else()
+		} // else if()
+		else if ( strcmp (cmd, "delta") == 0 )
 		{
 			float de = 0;
-			sscanf(line, "delta %f", &de);
-			if (de > 0)
+			sscanf (line, "delta %f", &de);
+			if ( de > 0 )
 			{
-				printf("Delta = %f\n", de);
-				diffDelta = de;
-			}
+				printf ("Delta = %f\n", de);
+				Delta = de;
+			} // if()
 			else
 			{
-				printf("Error: invalid delta\n");
-			}
-		}
-		else if (strcmp(cmd, "start") == 0)
+				printf ("Error: invalid delta\n");
+			} // else()
+		} // else if()
+		else if ( strcmp (cmd, "start") == 0 )
 		{
-			pthread_create(&cleanerThread, NULL, Cleaner, NULL);
-			pthread_join(cleanerThread, NULL);
+			pthread_create (&cleanup, NULL, &Clean, NULL);
+			startCom ();
+		} // else if()
+		free (line);
+	} // while()
 
-			pthread_cond_broadcast(&condition);
-		}
-		else
-		{
-			char cmd[64];
-			sscanf(line, "%s", cmd);
-			printf("Error: unrecognized cmd: %s\n", line);
-			status = 1;
-		}
-		free(line);
-	}
+	fclose (file);
 
-	if (status == 0)
+	for ( int i = 0; i < 2 * NUMPROXIES; i ++ )
 	{
-		for (size_t i = 0; i < MAXPUBLISHERS; i++) {
-			if (publisherArgs[i].flag != 0)
-			{
-				pthread_join(publisherArgs[i].thread, NULL);
-			}
-		}
-
-		for (size_t i = 0; i < MAXSUBSCRIBERS; i++) {
-			if (subscriberArgs[i].flag != 0)
-			{
-				pthread_join(subscriberArgs[i].thread, NULL);
-			}
-		}
-
-		for (size_t i = 0; i < MAXTOPICS; i++) {
-			free(Queues[i].t);
-		}
+		pthread_join (threads[i], NULL);
 	}
-	fclose(file);
-}
+	pthread_join (cleanup, NULL);
+	exit (0);
+} // main()
