@@ -9,6 +9,7 @@
 #include <pthread.h>
 #include <sys/types.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 
 #define TRUE 1
 #define FALSE 0
@@ -109,6 +110,7 @@ int enqueue (int id, topicEntry *topic)
 				if ( DEBUG )
 				{
 					printf ("The queue(%d) is full\n", id);
+					fflush(stdout);
 				}
 
 				// unlock both primary and secondary mutex
@@ -136,6 +138,7 @@ int enqueue (int id, topicEntry *topic)
 			if ( DEBUG )
 			{
 				printf ("Enqueued!\n");
+				fflush(stdout);
 			}
 
 			// unlock both mutexs
@@ -152,6 +155,7 @@ int enqueue (int id, topicEntry *topic)
 	if ( DEBUG )
 	{
 		printf ("The queue(%d) was not found\n", id);
+		fflush(stdout);
 	}
 	return 0;
 
@@ -210,6 +214,7 @@ int dequeue ()
 					} // if()
 
 					printf ("Dequeued!\n");
+					fflush(stdout);
 
 				} // if()
 
@@ -258,6 +263,7 @@ int entry (int id, int last, topicEntry *topic)
 				if ( DEBUG )
 				{
 					printf ("The queue(%d) is empty\n", id);
+					fflush(stdout);
 				}
 
 				// unlock the mutex's
@@ -321,6 +327,7 @@ int entry (int id, int last, topicEntry *topic)
 	if ( DEBUG )
 	{
 		printf ("The queue(%d) was not found\n", id);
+		fflush(stdout);
 	}
 	return 0;
 } // entry()
@@ -359,6 +366,7 @@ Publisher()
 void *Publisher (void *args)
 {
 	printf ("Proxy thread %ld - Type(Publisher)\n", pthread_self ());
+	fflush(stdout);
 
 
 	int pubPos = - 1;
@@ -371,23 +379,25 @@ void *Publisher (void *args)
 		pthread_mutex_unlock (&mutex);
 
 		pubPos = position (pthread_self (), 0);
-		if ( pubPos != - 1 )
+		if ( pubPos != - 1 && publisherArgs[pubPos].flag == 1 )
 		{
 			FILE *pubFile = fopen (publisherArgs[pubPos].location, "r");
 
-			if ( pubFile == NULL)
+			if ( pubFile == NULL )
 			{
 				printf ("The publisher file(%s) was not able to be opened!\n", publisherArgs[pubPos].location);
+				fflush(stdout);
 				return 0;
 			} // if()
 
-			while ( pubFile != NULL)
+			int pubNumber = 1;
+			while ( pubNumber != -1)
 			{
 
 				char cmd[32];
 				char *line = NULL;
 				size_t length = 0;
-				getline (&line, &length, pubFile);
+				pubNumber = getline (&line, &length, pubFile);
 				sscanf (line, "%15s", cmd);
 
 				// printf ("--> cmd(%s)\n\n", cmd);
@@ -404,10 +414,12 @@ void *Publisher (void *args)
 					if ( id <= 0 || strcmp (url, "") == 0 || strcmp (caption, "") == 0 )
 					{
 						printf ("Invalid arguments for put command. Thread(%ld)\n", pthread_self ());
+						fflush(stdout);
 						processing = 0;
 					} // if()
 
 					printf ("Proxy thread %ld - Type:(Publisher) - Executed command: put\n", pthread_self ());
+					fflush(stdout);
 					topicEntry pub = {.pubID = pthread_self ()};
 					strcpy (pub.photoURL, url);
 					strcpy (pub.photoCaption, caption);
@@ -424,17 +436,20 @@ void *Publisher (void *args)
 					if ( time >= 0 )
 					{
 						printf ("Proxy thread %ld - Type:(Publisher) - Executed command: sleep\n", pthread_self ());
-						usleep (time * 1000);
+						fflush(stdout);
+						usleep (time);
 					} // if()
 					else
 					{
 						printf ("Invalid arguments for sleep command. Thread(%ld)", pthread_self ());
+						fflush(stdout);
 					} // else()
 				} // if()
 
 				else if ( strcmp (trim(cmd), "stop") == 0 )
 				{
 					printf ("Proxy thread %ld - Type:(Publisher) - Executed command: stop\n", pthread_self ());
+					fflush(stdout);
 					publisherArgs[pubPos].flag = 0;
 				} // if()
 				free (line);
@@ -456,6 +471,7 @@ void *Publisher (void *args)
 void *Subscriber (void *args)
 {
 	printf ("Proxy thread %ld - Type(Subscriber)\n", pthread_self ());
+	fflush(stdout);
 
 	int pos = - 1;
 	int processing = 1;
@@ -474,7 +490,7 @@ void *Subscriber (void *args)
 		pthread_cond_wait (&conditions, &mutex);
 		pthread_mutex_unlock (&mutex);
 		pos = position (pthread_self (), 1);
-		if ( pos != - 1 )
+		if ( pos != - 1 && subscriberArgs[pos].flag == 1 )
 		{
 			char *token = NULL;
 			char location[MAXNAME];
@@ -486,17 +502,24 @@ void *Subscriber (void *args)
 			char *ptr;
 			token = strtok (location, ".");
 
+
 			// setup the correct file name
 			if ( token != NULL)
 			{
 				strncat (token, ext, 6);
 			} // if()
 
+
+			printf("-----> %s \n\n", token);
+			fflush(stdout);
+
 			// open the file to write to
 			FILE *subFile = fopen (token, "w");
 			if ( subFile == NULL)
 			{
 				printf ("File(%s) does not exist and thus cannot be modified\n", token);
+				fflush(stdout);
+				return;
 			} // if()
 			else
 			{
@@ -528,16 +551,18 @@ void *Subscriber (void *args)
 			if ( in == NULL)
 			{
 				printf ("File(%s) could not be opened\n", subscriberArgs[pos].location);
+				fflush(stdout);
 				return 0;
 			} // if()
 
-			while ( in != NULL)
+			int inNumber = 1;
+			while ( inNumber != -1)
 			{
 
 				char cmd[32];
 				char *line = NULL;
 				size_t length = 0;
-				getline (&line, &length, in);
+				inNumber = getline (&line, &length, in);
 
 				int j = 0;
 				char *token;
@@ -571,6 +596,7 @@ void *Subscriber (void *args)
 				if ( strcmp (strArr[0], "get") == 0 )
 				{
 					printf ("Proxy Thread: %ld - type: Subscriber - Executed command : get\n", pthread_self ());
+					fflush(stdout);
 					topicEntry ent;
 					topicEntry *entPtr = &ent;
 					int id = atoi (strArr[1]);
@@ -581,6 +607,7 @@ void *Subscriber (void *args)
 					{
 						lastEntry[id] = lastEntry[id] + 1;
 						printf ("URL(%s) | Caption(%s) | ID(%ld)", ent.photoURL, ent.photoCaption, ent.pubID);
+						fflush(stdout);
 
 						int rPos = 0;
 						for ( int l = 0; l < MAXTOPICS; l ++ )
@@ -607,6 +634,7 @@ void *Subscriber (void *args)
 					{
 						lastEntry[id] = entryReturn;
 						printf ("URL(%s) | Caption(%s) | ID(%ld)", ent.photoURL, ent.photoCaption, ent.pubID);
+						fflush(stdout);
 
 						int rPos = 0;
 						for ( int f = 0; f < MAXTOPICS; f ++ )
@@ -634,12 +662,14 @@ void *Subscriber (void *args)
 				else if ( strcmp (strArr[0], "sleep") == 0 )
 				{
 					printf ("Proxy Thread: %ld - type: Subscriber - Executed command : sleep\n", pthread_self ());
+					fflush(stdout);
 					usleep (atoi (strArr[1]));
 				} // if()
 
 				else if ( strcmp (strArr[0], "stop") == 0 )
 				{
 					printf ("Proxy Thread : %ld - Type: Subscriber - executed command : stop\n", pthread_self ());
+					fflush(stdout);
 					subscriberArgs[pos].flag = 0;
 				} // if()
 
@@ -666,10 +696,11 @@ void *Subscriber (void *args)
 void *Clean (void *args)
 {
 	printf ("Clean Thread Running thread(%ld), running now\n", pthread_self ());
-	int b = 0;
-	while ( b == 0 )
+	fflush(stdout);
+
+	while ( TRUE )
 	{
-		wait(5);
+		// wait (5);
 		dequeue ();
 
 		int freeCount = 0;
@@ -679,17 +710,32 @@ void *Clean (void *args)
 			{
 				freeCount = freeCount + 1;
 			} // if
+			else
+			{
+				printf("waiting on subscriber(%ld)\n", subscriberArgs[m].ID);
+				fflush(stdout);
+			}
 
 
 			if ( publisherArgs[m].flag == 0 )
 			{
 				freeCount = freeCount + 1;
 			} // if
+			else
+			{
+				printf("waiting on publisher(%ld)\n", publisherArgs[m].ID);
+				fflush(stdout);
+			}
 		} // for()
+
+		printf("NUM(%d)\n", NUMPROXIES * 2);
+		printf("free(%d)\n", freeCount);
+		fflush(stdout);
 
 		if ( freeCount == NUMPROXIES * 2 )
 		{
 			printf ("Clean thread stopping\n");
+			fflush(stdout);
 			return;
 		}
 
@@ -750,6 +796,7 @@ int main (int argc, char *argv[])
 	if ( argv[1] == NULL || argv[2] != NULL)
 	{
 		printf ("Error: invalid args\n");
+		fflush(stdout);
 		exit (1);
 	}
 
@@ -757,6 +804,7 @@ int main (int argc, char *argv[])
 	if ( file == NULL)
 	{
 		printf ("Error: failed to open file.\n");
+		fflush(stdout);
 		exit (1);
 	}
 
@@ -774,12 +822,13 @@ int main (int argc, char *argv[])
 		subscriberArgs[i].flag = 0;
 	}
 
-	while ( file != NULL)
+	int number = 1;
+	while ( number != -1)
 	{
 		size_t length = 0;
 		char *line = NULL;
 		char cmd[32];
-		getline (&line, &length, file);
+		number = getline (&line, &length, file);
 		sscanf (line, "%15s", cmd);
 
 		// if ( DEBUG )
@@ -799,11 +848,13 @@ int main (int argc, char *argv[])
 			if ( topicID <= 0 || queueLength <= 0 || strcmp (name, "") == 0 )
 			{
 				printf ("Error: could not create topic, null information\n");
+				fflush(stdout);
 			} // if()
 			else
 			{
 				initBuffer (length, topicID, name);
 				printf ("Topic Created!\n");
+				fflush(stdout);
 			} // else
 		} // if()
 		else if ( strcmp (cmd, "query") == 0 )
@@ -820,6 +871,7 @@ int main (int argc, char *argv[])
 					{
 						printf ("Publisher Thread(%ld), Location(%s)\n", publisherArgs[i].ID,
 						        publisherArgs[i].location);
+										fflush(stdout);
 					}
 				} // for()
 			} // if()
@@ -831,6 +883,7 @@ int main (int argc, char *argv[])
 					{
 						printf ("Subscriber Thread(%ld), Location(%s)\n", subscriberArgs[i].ID,
 						        subscriberArgs[i].location);
+										fflush(stdout);
 					}
 				} // for()
 			} // else if()
@@ -839,6 +892,7 @@ int main (int argc, char *argv[])
 				for ( int i = 0; i < numTopics; i ++ )
 				{
 					printf ("ID(%d), Len(%d)\n", Queue[i].topicID, Queue[i].length);
+					fflush(stdout);
 				} //for()
 			}
 		}// else if()
@@ -859,11 +913,13 @@ int main (int argc, char *argv[])
 						strcpy (publisherArgs[i].location, filename);
 						i = NUMPROXIES;
 						printf ("Added publisher\n");
+						fflush(stdout);
 					} // if()
 
 					if ( i == NUMPROXIES - 1 )
 					{
 						printf ("No free threads in the pool of publishers\n");
+						fflush(stdout);
 					} // if()
 				} // for()
 			} // if()
@@ -877,11 +933,13 @@ int main (int argc, char *argv[])
 						strcpy (subscriberArgs[i].location, filename);
 						i = NUMPROXIES;
 						printf ("Added subscriber\n");
+						fflush(stdout);
 					} // if()
 
 					if ( i == NUMPROXIES - 1 )
 					{
 						printf ("No free threads in the pool of subscribers\n");
+						fflush(stdout);
 					} // if()
 				} // for()
 			} // else if()
@@ -897,11 +955,13 @@ int main (int argc, char *argv[])
 			if ( de > 0 )
 			{
 				printf ("Delta = %f\n", de);
+				fflush(stdout);
 				Delta = de;
 			} // if()
 			else
 			{
 				printf ("Error: invalid delta\n");
+				fflush(stdout);
 			} // else()
 		} // else if()
 		else if ( strcmp (cmd, "start") == 0 )
