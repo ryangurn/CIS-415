@@ -453,30 +453,6 @@ void *Publisher (void *args)
 /*
 
 */
-void *testPublisher (void *args)
-{
-	printf ("Publisher Test, Thread(%ld) Now Running\n", pthread_self ());
-	topicEntry one = {.photoCaption = "Picture #1"};
-	topicEntry two = {.photoCaption = "Picture #2"};
-	topicEntry three = {.photoCaption = "Picture #3"};
-	topicEntry four = {.photoCaption = "Picture #4"};
-
-	topicEntry *onePtr = &one;
-	topicEntry *twoPtr = &two;
-	topicEntry *threePtr = &three;
-	topicEntry *fourPtr = &four;
-
-	enqueue (1, onePtr);
-	enqueue (1, twoPtr);
-	enqueue (1, threePtr);
-	enqueue (1, fourPtr);
-
-	return 0;
-} // testPublisher()
-
-/*
-
-*/
 void *Subscriber (void *args)
 {
 	printf ("Proxy thread %ld - Type(Subscriber)\n", pthread_self ());
@@ -682,20 +658,6 @@ void *Subscriber (void *args)
 	} // while()
 	return 0;
 } // subscriber()
-
-/*
-
-*/
-void *testSubscriber (void *args)
-{
-	printf ("Subscriber Test, Thread(%ld) Now Running\n", pthread_self ());
-	topicEntry topic = emptyTopic;
-	topicEntry *topicPtr = &topic;
-
-	entry (1, 0, topicPtr);
-	printf ("%s\n", topic.photoCaption);
-	return 0;
-} // testSubscriber()
 
 /*
 
